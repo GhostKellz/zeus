@@ -7,7 +7,7 @@ const descriptor = @import("descriptor.zig");
 const render_pass = @import("render_pass.zig");
 const pipeline = @import("pipeline.zig");
 const sampler_mod = @import("sampler.zig");
-const image = @import("image.zig");
+const glyph_atlas = @import("glyph_atlas.zig");
 const shader = @import("shader.zig");
 const loader = @import("loader.zig");
 
@@ -16,6 +16,32 @@ const text_frag_spv align(@alignOf(u32)) = @embedFile("../../shaders/text.frag.s
 const text_vert_code = std.mem.bytesAsSlice(u32, text_vert_spv);
 const text_frag_code = std.mem.bytesAsSlice(u32, text_frag_spv);
 const shader_entry_point: [:0]const u8 = "main";
+
+const RenderError = errors.Error || error{
+    InvalidFrameIndex,
+    NoActiveFrame,
+    InstanceOverflow,
+    InvalidUniformLength,
+};
+
+pub const TextQuad = struct {
+    position: [2]f32,
+    size: [2]f32,
+    atlas_rect: [4]f32,
+    color: [4]f32,
+};
+
+const Instance = extern struct {
+    position: [2]f32,
+    size: [2]f32,
+    atlas_rect: [4]f32,
+    color: [4]f32,
+};
+
+const FrameState = struct {
+    instance_count: usize = 0,
+    needs_upload: bool = false,
+};
 
 pub const InitOptions = struct {
     extent: types.VkExtent2D,
@@ -26,6 +52,11 @@ pub const InitOptions = struct {
     uniform_buffer_size: types.VkDeviceSize = 64,
     atlas_extent: types.VkExtent2D = .{ .width = 1024, .height = 1024 },
     atlas_format: types.VkFormat = .R8_UNORM,
+    atlas_padding: u32 = 1,
+    atlas_growth_callback: ?glyph_atlas.GrowthCallback = null,
+    atlas_growth_context: ?*anyopaque = null,
+    rasterizer: ?glyph_atlas.RasterCallback = null,
+    raster_context: ?*anyopaque = null,
 };
 
 pub const TextRenderer = struct {
@@ -47,11 +78,16 @@ pub const TextRenderer = struct {
     descriptor_sets: descriptor.DescriptorSetAllocation,
 
     sampler: sampler_mod.Sampler,
-    atlas: image.ManagedImage,
+    glyph_atlas: glyph_atlas.GlyphAtlas,
 
     vertex_buffer: buffer.ManagedBuffer,
     instance_buffer: buffer.ManagedBuffer,
     uniform_buffers: []buffer.ManagedBuffer,
+    frame_states: []FrameState,
+    instance_data: []Instance,
+    instances_per_frame: usize,
+    instance_stride: types.VkDeviceSize,
+    active_frame: ?u32,
 
     pub fn init(allocator: std.mem.Allocator, device: *device_mod.Device, options: InitOptions) errors.Error!TextRenderer {
         std.debug.assert(options.frames_in_flight > 0);
@@ -144,21 +180,18 @@ pub const TextRenderer = struct {
         });
         errdefer text_sampler.deinit();
 
-        var atlas = try image.createManagedImage(device, options.memory_props, .{
-            .image = .{
-                .format = options.atlas_format,
-                .extent = types.VkExtent3D{
-                    .width = options.atlas_extent.width,
-                    .height = options.atlas_extent.height,
-                    .depth = 1,
-                },
-                .usage = types.VK_IMAGE_USAGE_SAMPLED_BIT | types.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                .initial_layout = types.VkImageLayout.UNDEFINED,
-            },
-            .aspect_mask = types.VK_IMAGE_ASPECT_COLOR_BIT,
-            .view_type = .@"2D",
+        var glyph_atlas_obj = try glyph_atlas.GlyphAtlas.init(allocator, device, options.memory_props, .{
+            .extent = options.atlas_extent,
+            .format = options.atlas_format,
+            .padding = options.atlas_padding,
+            .growth_callback = options.atlas_growth_callback,
+            .growth_context = options.atlas_growth_context,
+            .rasterizer = options.rasterizer,
+            .raster_context = options.raster_context,
         });
-        errdefer atlas.deinit();
+        errdefer glyph_atlas_obj.deinit();
+
+        const atlas_image = glyph_atlas_obj.managedImage();
 
         const float_size = @sizeOf(f32);
         const vertex_stride: types.VkDeviceSize = 2 * float_size;
@@ -177,7 +210,9 @@ pub const TextRenderer = struct {
         try vertex_buffer.write(std.mem.sliceAsBytes(quad_vertices[0..]), 0);
 
         const instance_stride: types.VkDeviceSize = (2 + 2 + 4 + 4) * float_size;
-        const instance_buffer_size = instance_stride * @as(types.VkDeviceSize, options.max_instances);
+        const instances_per_frame = @as(usize, @intCast(options.max_instances));
+        const total_instances = std.math.mul(usize, instances_per_frame, frame_count) catch return errors.Error.FeatureNotPresent;
+        const instance_buffer_size = std.math.mul(types.VkDeviceSize, instance_stride, @as(types.VkDeviceSize, @intCast(total_instances))) catch return errors.Error.FeatureNotPresent;
 
         var instance_buffer = try buffer.createManagedBuffer(device, options.memory_props, instance_buffer_size, types.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .{
             .filter = .{
@@ -186,6 +221,13 @@ pub const TextRenderer = struct {
             },
         });
         errdefer instance_buffer.deinit();
+
+        const instance_data = try allocator.alloc(Instance, total_instances);
+        errdefer allocator.free(instance_data);
+
+        const frame_states = try allocator.alloc(FrameState, frame_count);
+        errdefer allocator.free(frame_states);
+        std.mem.set(FrameState, frame_states, .{});
 
         var uniform_buffers = try allocator.alloc(buffer.ManagedBuffer, frame_count);
         var created_uniform_buffers: usize = 0;
@@ -203,7 +245,7 @@ pub const TextRenderer = struct {
             });
         }
 
-        const atlas_view = atlas.view orelse return errors.Error.FeatureNotPresent;
+        const atlas_view = atlas_image.view orelse return errors.Error.FeatureNotPresent;
         const sampler_handle = text_sampler.handle orelse return errors.Error.FeatureNotPresent;
 
         for (descriptor_sets.sets, 0..) |set_handle, i| {
@@ -255,11 +297,131 @@ pub const TextRenderer = struct {
             .descriptor_set_layout = descriptor_set_layout,
             .descriptor_sets = descriptor_sets,
             .sampler = text_sampler,
-            .atlas = atlas,
+            .glyph_atlas = glyph_atlas_obj,
             .vertex_buffer = vertex_buffer,
             .instance_buffer = instance_buffer,
             .uniform_buffers = uniform_buffers,
+            .frame_states = frame_states,
+            .instance_data = instance_data,
+            .instances_per_frame = instances_per_frame,
+            .instance_stride = instance_stride,
+            .active_frame = null,
         };
+    }
+
+    pub fn glyphAtlas(self: *TextRenderer) *glyph_atlas.GlyphAtlas {
+        return &self.glyph_atlas;
+    }
+
+    pub fn beginFrame(self: *TextRenderer, frame_index: u32) RenderError!void {
+        if (frame_index >= self.frames_in_flight) return error.InvalidFrameIndex;
+        const idx: usize = @intCast(frame_index);
+        self.active_frame = frame_index;
+        self.frame_states[idx] = .{};
+    }
+
+    pub fn setProjection(self: *TextRenderer, matrix: []const f32) RenderError!void {
+        if (matrix.len != 16) return error.InvalidUniformLength;
+        const frame_index = self.active_frame orelse return error.NoActiveFrame;
+        const idx: usize = @intCast(frame_index);
+        const bytes = std.mem.sliceAsBytes(matrix);
+        try self.uniform_buffers[idx].write(bytes, 0);
+    }
+
+    pub fn queueQuad(self: *TextRenderer, quad: TextQuad) RenderError!void {
+        const frame_index = self.active_frame orelse return error.NoActiveFrame;
+        const idx: usize = @intCast(frame_index);
+        var state = &self.frame_states[idx];
+        if (state.instance_count >= self.instances_per_frame) return error.InstanceOverflow;
+
+        const base = self.baseInstanceIndex(frame_index);
+        const instance_index = base + state.instance_count;
+        self.instance_data[instance_index] = Instance{
+            .position = quad.position,
+            .size = quad.size,
+            .atlas_rect = quad.atlas_rect,
+            .color = quad.color,
+        };
+
+        state.instance_count += 1;
+        state.needs_upload = true;
+    }
+
+    pub fn encode(self: *TextRenderer, cmd: types.VkCommandBuffer) RenderError!void {
+        const frame_index = self.active_frame orelse return error.NoActiveFrame;
+        const idx: usize = @intCast(frame_index);
+        var state = &self.frame_states[idx];
+        if (state.instance_count == 0) return;
+
+        if (state.needs_upload) {
+            const base = self.baseInstanceIndex(frame_index);
+            const slice = self.instance_data[base .. base + state.instance_count];
+            const bytes = std.mem.sliceAsBytes(slice);
+            try self.instance_buffer.write(bytes, self.instanceBufferOffset(frame_index));
+            state.needs_upload = false;
+        }
+
+        _ = try self.glyph_atlas.flushUploads(cmd);
+
+        const viewport = types.VkViewport{
+            .x = 0,
+            .y = 0,
+            .width = @floatFromInt(self.extent.width),
+            .height = @floatFromInt(self.extent.height),
+            .minDepth = 0.0,
+            .maxDepth = 1.0,
+        };
+        self.device.dispatch.cmd_set_viewport(cmd, 0, 1, &viewport);
+
+        const scissor = types.VkRect2D{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = self.extent,
+        };
+        self.device.dispatch.cmd_set_scissor(cmd, 0, 1, &scissor);
+
+        const descriptor_set = self.descriptor_sets.sets[idx];
+        const vertex_buffers = [_]types.VkBuffer{ self.vertex_buffer.buffer, self.instance_buffer.buffer };
+        const instance_offset = self.instanceBufferOffset(frame_index);
+        const offsets = [_]types.VkDeviceSize{ 0, instance_offset };
+
+        self.device.dispatch.cmd_bind_pipeline(cmd, types.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline.handle.?);
+        self.device.dispatch.cmd_bind_descriptor_sets(cmd, types.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle.?, 0, 1, &descriptor_set, 0, null);
+        self.device.dispatch.cmd_bind_vertex_buffers(cmd, 0, @intCast(vertex_buffers.len), vertex_buffers[0..].ptr, offsets[0..].ptr);
+        self.device.dispatch.cmd_draw(cmd, 4, @intCast(state.instance_count), 0, 0);
+    }
+
+    pub fn endFrame(self: *TextRenderer) void {
+        self.active_frame = null;
+    }
+
+    pub fn releaseAtlasUploads(self: *TextRenderer) void {
+        self.glyph_atlas.releaseUploads();
+    }
+
+    pub fn quadFromGlyph(info: glyph_atlas.GlyphInfo, origin: [2]f32, color: [4]f32) TextQuad {
+        const uv_width = info.uv_max[0] - info.uv_min[0];
+        const uv_height = info.uv_max[1] - info.uv_min[1];
+        return TextQuad{
+            .position = .{
+                origin[0] + @as(f32, @floatFromInt(info.bearing.x)),
+                origin[1] - @as(f32, @floatFromInt(info.bearing.y)),
+            },
+            .size = .{
+                @as(f32, @floatFromInt(info.rect.size.width)),
+                @as(f32, @floatFromInt(info.rect.size.height)),
+            },
+            .atlas_rect = .{ info.uv_min[0], info.uv_min[1], uv_width, uv_height },
+            .color = color,
+        };
+    }
+
+    fn baseInstanceIndex(self: *const TextRenderer, frame_index: u32) usize {
+        return self.instances_per_frame * @as(usize, @intCast(frame_index));
+    }
+
+    fn instanceBufferOffset(self: *const TextRenderer, frame_index: u32) types.VkDeviceSize {
+        const base = self.baseInstanceIndex(frame_index);
+        return self.instance_stride * @as(types.VkDeviceSize, @intCast(base));
     }
 
     pub fn deinit(self: *TextRenderer) void {
@@ -271,10 +433,22 @@ pub const TextRenderer = struct {
             self.uniform_buffers = &.{};
         }
 
+        if (self.instance_data.len > 0) {
+            self.allocator.free(self.instance_data);
+            self.instance_data = &.{};
+        }
+
+        if (self.frame_states.len > 0) {
+            self.allocator.free(self.frame_states);
+            self.frame_states = &.{};
+        }
+
+        self.active_frame = null;
+
         self.instance_buffer.deinit();
         self.vertex_buffer.deinit();
 
-        self.atlas.deinit();
+        self.glyph_atlas.deinit();
         self.sampler.deinit();
 
         if (self.descriptor_sets.len() > 0) {
@@ -318,6 +492,19 @@ const TestCapture = struct {
     pub var descriptor_write_count: usize = 0;
     pub var last_buffer_size: types.VkDeviceSize = 0;
     pub var last_image_extent: types.VkExtent3D = .{ .width = 0, .height = 0, .depth = 0 };
+    pub var bind_pipeline_calls: usize = 0;
+    pub var bind_descriptor_calls: usize = 0;
+    pub var bind_vertex_calls: usize = 0;
+    pub var draw_calls: usize = 0;
+    pub var set_viewport_calls: usize = 0;
+    pub var set_scissor_calls: usize = 0;
+    pub var last_draw_vertex_count: u32 = 0;
+    pub var last_draw_instance_count: u32 = 0;
+    pub var last_instance_offset: types.VkDeviceSize = 0;
+    pub var last_descriptor_set: ?types.VkDescriptorSet = null;
+    pub var last_pipeline: ?types.VkPipeline = null;
+    pub var last_viewport: ?types.VkViewport = null;
+    pub var last_scissor: ?types.VkRect2D = null;
 
     pub fn reset() void {
         descriptor_layout_calls = 0;
@@ -348,6 +535,19 @@ const TestCapture = struct {
         last_buffer_size = 0;
         last_image_extent = .{ .width = 0, .height = 0, .depth = 0 };
         test_next_handle = 0x2000;
+        bind_pipeline_calls = 0;
+        bind_descriptor_calls = 0;
+        bind_vertex_calls = 0;
+        draw_calls = 0;
+        set_viewport_calls = 0;
+        set_scissor_calls = 0;
+        last_draw_vertex_count = 0;
+        last_draw_instance_count = 0;
+        last_instance_offset = 0;
+        last_descriptor_set = null;
+        last_pipeline = null;
+        last_viewport = null;
+        last_scissor = null;
     }
 };
 
@@ -529,6 +729,52 @@ fn stubMapMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: types.VkDeviceSi
 
 fn stubUnmapMemory(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.C) void {}
 
+fn stubCmdBindPipeline(_: types.VkCommandBuffer, bind_point: types.VkPipelineBindPoint, pipeline_handle: types.VkPipeline) callconv(.C) void {
+    std.debug.assert(bind_point == types.VK_PIPELINE_BIND_POINT_GRAPHICS);
+    TestCapture.bind_pipeline_calls += 1;
+    TestCapture.last_pipeline = pipeline_handle;
+}
+
+fn stubCmdBindDescriptorSets(_: types.VkCommandBuffer, bind_point: types.VkPipelineBindPoint, _: types.VkPipelineLayout, first_set: u32, set_count: u32, descriptor_sets: *const types.VkDescriptorSet, dynamic_offset_count: u32, dynamic_offsets: ?[*]const u32) callconv(.C) void {
+    _ = dynamic_offsets;
+    std.debug.assert(bind_point == types.VK_PIPELINE_BIND_POINT_GRAPHICS);
+    std.debug.assert(first_set == 0);
+    std.debug.assert(set_count == 1);
+    std.debug.assert(dynamic_offset_count == 0);
+    TestCapture.bind_descriptor_calls += 1;
+    TestCapture.last_descriptor_set = descriptor_sets[0];
+}
+
+fn stubCmdBindVertexBuffers(_: types.VkCommandBuffer, first_binding: u32, binding_count: u32, buffers: *const types.VkBuffer, offsets: *const types.VkDeviceSize) callconv(.C) void {
+    std.debug.assert(first_binding == 0);
+    std.debug.assert(binding_count == 2);
+    _ = buffers;
+    TestCapture.bind_vertex_calls += 1;
+    TestCapture.last_instance_offset = offsets[1];
+}
+
+fn stubCmdDraw(_: types.VkCommandBuffer, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) callconv(.C) void {
+    std.debug.assert(first_vertex == 0);
+    std.debug.assert(first_instance == 0);
+    TestCapture.draw_calls += 1;
+    TestCapture.last_draw_vertex_count = vertex_count;
+    TestCapture.last_draw_instance_count = instance_count;
+}
+
+fn stubCmdSetViewport(_: types.VkCommandBuffer, first_viewport: u32, viewport_count: u32, viewports: *const types.VkViewport) callconv(.C) void {
+    std.debug.assert(first_viewport == 0);
+    std.debug.assert(viewport_count == 1);
+    TestCapture.set_viewport_calls += 1;
+    TestCapture.last_viewport = viewports[0];
+}
+
+fn stubCmdSetScissor(_: types.VkCommandBuffer, first_scissor: u32, scissor_count: u32, scissors: *const types.VkRect2D) callconv(.C) void {
+    std.debug.assert(first_scissor == 0);
+    std.debug.assert(scissor_count == 1);
+    TestCapture.set_scissor_calls += 1;
+    TestCapture.last_scissor = scissors[0];
+}
+
 fn setupTestDispatch(device: *device_mod.Device) void {
     device.dispatch.create_descriptor_set_layout = stubCreateDescriptorSetLayout;
     device.dispatch.destroy_descriptor_set_layout = stubDestroyDescriptorSetLayout;
@@ -561,6 +807,12 @@ fn setupTestDispatch(device: *device_mod.Device) void {
     device.dispatch.free_memory = stubFreeMemory;
     device.dispatch.map_memory = stubMapMemory;
     device.dispatch.unmap_memory = stubUnmapMemory;
+    device.dispatch.cmd_bind_pipeline = stubCmdBindPipeline;
+    device.dispatch.cmd_bind_descriptor_sets = stubCmdBindDescriptorSets;
+    device.dispatch.cmd_bind_vertex_buffers = stubCmdBindVertexBuffers;
+    device.dispatch.cmd_draw = stubCmdDraw;
+    device.dispatch.cmd_set_viewport = stubCmdSetViewport;
+    device.dispatch.cmd_set_scissor = stubCmdSetScissor;
 }
 
 test "TextRenderer.init wires core Vulkan objects" {
@@ -629,4 +881,85 @@ test "TextRenderer.init wires core Vulkan objects" {
     try std.testing.expectEqual(@as(usize, 1), TestCapture.destroy_image_calls);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.destroy_image_view_calls);
     try std.testing.expectEqual(@as(usize, 4), TestCapture.destroy_buffer_calls);
+}
+
+test "TextRenderer.beginFrame queues quads and encodes draw call" {
+    const fake_device_handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x2000)));
+
+    var device = device_mod.Device{
+        .allocator = std.testing.allocator,
+        .loader = undefined,
+        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .handle = fake_device_handle,
+        .allocation_callbacks = null,
+    };
+
+    setupTestDispatch(&device);
+    TestCapture.reset();
+
+    var memory_props = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    memory_props.memoryTypeCount = 2;
+    memory_props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
+    memory_props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
+    memory_props.memoryHeapCount = 2;
+    memory_props.memoryHeaps[0] = .{ .size = 1024 * 1024 * 1024, .flags = types.VK_MEMORY_HEAP_DEVICE_LOCAL_BIT };
+    memory_props.memoryHeaps[1] = .{ .size = 512 * 1024 * 1024, .flags = 0 };
+
+    var renderer = try TextRenderer.init(std.testing.allocator, &device, .{
+        .extent = .{ .width = 640, .height = 480 },
+        .surface_format = .B8G8R8A8_SRGB,
+        .memory_props = memory_props,
+        .frames_in_flight = 2,
+        .max_instances = 8,
+        .uniform_buffer_size = 64,
+        .atlas_extent = .{ .width = 128, .height = 128 },
+        .atlas_format = .R8_UNORM,
+    });
+    defer renderer.deinit();
+
+    try renderer.beginFrame(0);
+
+    const projection = [_]f32{
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    };
+    try renderer.setProjection(projection[0..]);
+
+    const quad = TextQuad{
+        .position = .{ 10.0, 20.0 },
+        .size = .{ 8.0, 12.0 },
+        .atlas_rect = .{ 0.1, 0.2, 0.3, 0.4 },
+        .color = .{ 1.0, 1.0, 1.0, 1.0 },
+    };
+
+    try renderer.queueQuad(quad);
+    try std.testing.expectEqual(@as(usize, 1), renderer.frame_states[0].instance_count);
+
+    const command_buffer = @as(types.VkCommandBuffer, @ptrFromInt(@as(usize, 0x3000)));
+    try renderer.encode(command_buffer);
+    renderer.endFrame();
+
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.bind_pipeline_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.bind_descriptor_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.bind_vertex_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.draw_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.set_viewport_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.set_scissor_calls);
+    try std.testing.expectEqual(@as(u32, 4), TestCapture.last_draw_vertex_count);
+    try std.testing.expectEqual(@as(u32, 1), TestCapture.last_draw_instance_count);
+    try std.testing.expectEqual(@as(types.VkDeviceSize, 0), TestCapture.last_instance_offset);
+    try std.testing.expect(TestCapture.last_descriptor_set != null);
+    try std.testing.expect(TestCapture.last_pipeline != null);
+
+    const viewport = TestCapture.last_viewport orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(f32, 640.0), viewport.width);
+    try std.testing.expectEqual(@as(f32, 480.0), viewport.height);
+
+    const scissor = TestCapture.last_scissor orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(i32, 0), scissor.offset.x);
+    try std.testing.expectEqual(@as(i32, 0), scissor.offset.y);
+    try std.testing.expectEqual(@as(u32, 640), scissor.extent.width);
+    try std.testing.expectEqual(@as(u32, 480), scissor.extent.height);
 }

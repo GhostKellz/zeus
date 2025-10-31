@@ -304,6 +304,15 @@ pub const VkPhysicalDeviceType = enum(u32) {
     CPU = 4,
 };
 
+pub const VkPipelineBindPoint = enum(u32) {
+    GRAPHICS = 0,
+    COMPUTE = 1,
+    _,
+};
+
+pub const VK_PIPELINE_BIND_POINT_GRAPHICS: VkPipelineBindPoint = .GRAPHICS;
+pub const VK_PIPELINE_BIND_POINT_COMPUTE: VkPipelineBindPoint = .COMPUTE;
+
 pub const VkExtent2D = extern struct {
     width: u32,
     height: u32,
@@ -315,10 +324,29 @@ pub const VkExtent3D = extern struct {
     depth: u32,
 };
 
+pub const VkOffset2D = extern struct {
+    x: i32,
+    y: i32,
+};
+
 pub const VkOffset3D = extern struct {
     x: i32,
     y: i32,
     z: i32,
+};
+
+pub const VkViewport = extern struct {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    minDepth: f32,
+    maxDepth: f32,
+};
+
+pub const VkRect2D = extern struct {
+    offset: VkOffset2D,
+    extent: VkExtent2D,
 };
 
 pub const VkQueueFlags = VkFlags;
@@ -617,6 +645,12 @@ pub const PFN_vkInvalidateMappedMemoryRanges = *const fn (VkDevice, u32, *const 
 pub const PFN_vkCmdPipelineBarrier = *const fn (VkCommandBuffer, VkPipelineStageFlags, VkPipelineStageFlags, VkDependencyFlags, u32, ?[*]const VkMemoryBarrier, u32, ?[*]const VkBufferMemoryBarrier, u32, ?[*]const VkImageMemoryBarrier) callconv(.C) void;
 pub const PFN_vkCmdCopyBuffer = *const fn (VkCommandBuffer, VkBuffer, VkBuffer, u32, *const VkBufferCopy) callconv(.C) void;
 pub const PFN_vkCmdCopyBufferToImage = *const fn (VkCommandBuffer, VkBuffer, VkImage, VkImageLayout, u32, *const VkBufferImageCopy) callconv(.C) void;
+pub const PFN_vkCmdBindPipeline = *const fn (VkCommandBuffer, VkPipelineBindPoint, VkPipeline) callconv(.C) void;
+pub const PFN_vkCmdBindDescriptorSets = *const fn (VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, u32, u32, *const VkDescriptorSet, u32, ?[*]const u32) callconv(.C) void;
+pub const PFN_vkCmdBindVertexBuffers = *const fn (VkCommandBuffer, u32, u32, *const VkBuffer, *const VkDeviceSize) callconv(.C) void;
+pub const PFN_vkCmdSetViewport = *const fn (VkCommandBuffer, u32, u32, *const VkViewport) callconv(.C) void;
+pub const PFN_vkCmdSetScissor = *const fn (VkCommandBuffer, u32, u32, *const VkRect2D) callconv(.C) void;
+pub const PFN_vkCmdDraw = *const fn (VkCommandBuffer, u32, u32, u32, u32) callconv(.C) void;
 pub const PFN_vkCreateCommandPool = *const fn (VkDevice, *const VkCommandPoolCreateInfo, ?*const VkAllocationCallbacks, *VkCommandPool) callconv(.C) VkResult;
 pub const PFN_vkDestroyCommandPool = *const fn (VkDevice, VkCommandPool, ?*const VkAllocationCallbacks) callconv(.C) void;
 pub const PFN_vkResetCommandPool = *const fn (VkDevice, VkCommandPool, VkCommandPoolResetFlags) callconv(.C) VkResult;

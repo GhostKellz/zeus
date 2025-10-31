@@ -15,6 +15,7 @@ Zeus is currently in **Phase 5 (integration)** of its roadmap.
 - **Pure Zig implementation** targeting Zig 0.16.0-dev—no external runtime dependencies.
 - **Modular Vulkan wrappers** under `lib/vulkan/` covering loaders, devices, swapchains, synchronization, descriptors, buffers/images, shaders, render passes, and graphics pipelines.
 - **Text rendering focus** with instanced quad layouts, alpha blending defaults, and a dedicated pipeline ready for glyph atlas sampling.
+- **Frame-oriented text pipeline** with `TextRenderer.beginFrame`, `setProjection`, `queueQuad`, and `encode` built around the shared `GlyphAtlas` manager.
 - **Test-first workflow**: each helper module ships with capture-based unit tests to validate Vulkan dispatch usage.
 
 ## Getting started

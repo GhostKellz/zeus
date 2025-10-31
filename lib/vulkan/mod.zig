@@ -15,6 +15,7 @@ pub const descriptor = @import("descriptor.zig");
 pub const pipeline = @import("pipeline.zig");
 pub const shader = @import("shader.zig");
 pub const render_pass = @import("render_pass.zig");
+pub const glyph_atlas = @import("glyph_atlas.zig");
 pub const text_renderer = @import("text_renderer.zig");
 
 pub const Loader = loader.Loader;
@@ -45,4 +46,8 @@ pub const RenderPassBuilder = render_pass.RenderPassBuilder;
 pub const RenderPass = render_pass.RenderPass;
 pub const GraphicsPipeline = pipeline.GraphicsPipeline;
 pub const GraphicsPipelineOptions = pipeline.GraphicsPipelineOptions;
+pub const GlyphAtlas = glyph_atlas.GlyphAtlas;
+pub const GlyphKey = glyph_atlas.GlyphKey;
+pub const GlyphMetrics = glyph_atlas.GlyphMetrics;
+pub const TextQuad = text_renderer.TextQuad;
 pub const TextVertexLayout = pipeline.TextVertexLayout;
