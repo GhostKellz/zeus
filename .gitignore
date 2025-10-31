@@ -1,4 +1,12 @@
-/zig-cache/
-/zig-out/
+.zig-cache/
+zig-out/
+archive/ 
 *.o
 *.exe
+
+
+# Added by cargo
+
+/target
+CLAUDE.md
+todo.md
