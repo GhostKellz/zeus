@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const types = @import("types.zig");
 const errors = @import("error.zig");
 const device_mod = @import("device.zig");
@@ -17,6 +18,15 @@ const text_vert_code = std.mem.bytesAsSlice(u32, text_vert_spv);
 const text_frag_code = std.mem.bytesAsSlice(u32, text_frag_spv);
 const shader_entry_point: [:0]const u8 = "main";
 
+comptime {
+    std.debug.assert(@intFromPtr(text_vert_spv.ptr) % @alignOf(u32) == 0);
+    std.debug.assert(@intFromPtr(text_frag_spv.ptr) % @alignOf(u32) == 0);
+}
+
+const has_avx2 = builtin.cpu.arch == .x86_64 and std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
+const simd_width: usize = 8;
+const SimdVec = @Vector(simd_width, f32);
+
 const RenderError = errors.Error || error{
     InvalidFrameIndex,
     NoActiveFrame,
@@ -24,7 +34,7 @@ const RenderError = errors.Error || error{
     InvalidUniformLength,
 };
 
-pub const TextQuad = struct {
+pub const TextQuad = extern struct {
     position: [2]f32,
     size: [2]f32,
     atlas_rect: [4]f32,
@@ -37,6 +47,13 @@ const Instance = extern struct {
     atlas_rect: [4]f32,
     color: [4]f32,
 };
+
+comptime {
+    if (@sizeOf(TextQuad) != @sizeOf(Instance))
+        @compileError("TextQuad and Instance must remain layout-compatible");
+    if (@alignOf(TextQuad) != @alignOf(Instance))
+        @compileError("TextQuad and Instance must share alignment");
+}
 
 const FrameState = struct {
     instance_count: usize = 0,
@@ -329,21 +346,21 @@ pub const TextRenderer = struct {
     }
 
     pub fn queueQuad(self: *TextRenderer, quad: TextQuad) RenderError!void {
+        try self.queueQuads(&.{quad});
+    }
+
+    pub fn queueQuads(self: *TextRenderer, quads: []const TextQuad) RenderError!void {
+        if (quads.len == 0) return;
         const frame_index = self.active_frame orelse return error.NoActiveFrame;
         const idx: usize = @intCast(frame_index);
         var state = &self.frame_states[idx];
-        if (state.instance_count >= self.instances_per_frame) return error.InstanceOverflow;
+        if (state.instance_count + quads.len > self.instances_per_frame) return error.InstanceOverflow;
 
-        const base = self.baseInstanceIndex(frame_index);
-        const instance_index = base + state.instance_count;
-        self.instance_data[instance_index] = Instance{
-            .position = quad.position,
-            .size = quad.size,
-            .atlas_rect = quad.atlas_rect,
-            .color = quad.color,
-        };
+        const base = self.baseInstanceIndex(frame_index) + state.instance_count;
+        const dest = self.instance_data[base .. base + quads.len];
+        copyInstances(dest, quads);
 
-        state.instance_count += 1;
+        state.instance_count += quads.len;
         state.needs_upload = true;
     }
 
@@ -463,6 +480,41 @@ pub const TextRenderer = struct {
         self.render_pass.deinit();
     }
 };
+
+fn copyInstances(dest: []Instance, quads: []const TextQuad) void {
+    std.debug.assert(dest.len == quads.len);
+    if (dest.len == 0) return;
+    if (has_avx2) {
+        copyInstancesAvx2(dest, quads);
+    } else {
+        copyInstancesScalar(dest, quads);
+    }
+}
+
+fn copyInstancesScalar(dest: []Instance, quads: []const TextQuad) void {
+    const src_ptr = @as([*]const Instance, @ptrCast(quads.ptr));
+    const src_slice = src_ptr[0..quads.len];
+    std.mem.copy(Instance, dest, src_slice);
+}
+
+fn copyInstancesAvx2(dest: []Instance, quads: []const TextQuad) void {
+    const floats_per_instance: usize = @divExact(@sizeOf(Instance), @sizeOf(f32));
+    const total_floats: usize = floats_per_instance * quads.len;
+    const src_ptr = @as([*]const f32, @ptrCast(quads.ptr));
+    const dst_ptr = @as([*]f32, @ptrCast(dest.ptr));
+
+    var i: usize = 0;
+    while (i + simd_width <= total_floats) : (i += simd_width) {
+        const src_chunk_ptr = @as(*const [simd_width]f32, @ptrCast(src_ptr + i));
+        const vec: SimdVec = @bitCast(src_chunk_ptr.*);
+        const dst_chunk_ptr = @as(*[simd_width]f32, @ptrCast(dst_ptr + i));
+        dst_chunk_ptr.* = @bitCast(vec);
+    }
+
+    while (i < total_floats) : (i += 1) {
+        dst_ptr[i] = src_ptr[i];
+    }
+}
 
 const TestCapture = struct {
     pub var descriptor_layout_calls: usize = 0;
@@ -881,6 +933,62 @@ test "TextRenderer.init wires core Vulkan objects" {
     try std.testing.expectEqual(@as(usize, 1), TestCapture.destroy_image_calls);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.destroy_image_view_calls);
     try std.testing.expectEqual(@as(usize, 4), TestCapture.destroy_buffer_calls);
+}
+
+test "TextRenderer.queueQuads batches glyph data" {
+    const fake_device_handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x2500)));
+
+    var device = device_mod.Device{
+        .allocator = std.testing.allocator,
+        .loader = undefined,
+        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .handle = fake_device_handle,
+        .allocation_callbacks = null,
+    };
+
+    setupTestDispatch(&device);
+    TestCapture.reset();
+
+    var memory_props = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    memory_props.memoryTypeCount = 2;
+    memory_props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
+    memory_props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
+    memory_props.memoryHeapCount = 2;
+    memory_props.memoryHeaps[0] = .{ .size = 1024 * 1024 * 1024, .flags = types.VK_MEMORY_HEAP_DEVICE_LOCAL_BIT };
+    memory_props.memoryHeaps[1] = .{ .size = 512 * 1024 * 1024, .flags = 0 };
+
+    var renderer = try TextRenderer.init(std.testing.allocator, &device, .{
+        .extent = .{ .width = 1920, .height = 1080 },
+        .surface_format = .B8G8R8A8_SRGB,
+        .memory_props = memory_props,
+        .frames_in_flight = 2,
+        .max_instances = 16,
+        .uniform_buffer_size = 64,
+        .atlas_extent = .{ .width = 128, .height = 128 },
+        .atlas_format = .R8_UNORM,
+    });
+    defer renderer.deinit();
+
+    try renderer.beginFrame(0);
+
+    const quads = [_]TextQuad{
+        .{ .position = .{ 0.0, 0.0 }, .size = .{ 8.0, 16.0 }, .atlas_rect = .{ 0.0, 0.0, 0.25, 0.25 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } },
+        .{ .position = .{ 32.0, 48.0 }, .size = .{ 12.0, 18.0 }, .atlas_rect = .{ 0.25, 0.25, 0.5, 0.5 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } },
+        .{ .position = .{ 64.0, 96.0 }, .size = .{ 10.0, 20.0 }, .atlas_rect = .{ 0.5, 0.5, 0.25, 0.25 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } },
+    };
+
+    try renderer.queueQuads(quads[0..]);
+    try std.testing.expectEqual(quads.len, renderer.frame_states[0].instance_count);
+
+    const stored_bytes = std.mem.sliceAsBytes(renderer.instance_data[0..quads.len]);
+    const stored_quads = std.mem.bytesAsSlice(TextQuad, stored_bytes);
+    try std.testing.expectEqualSlices(TextQuad, quads[0..], stored_quads);
+
+    const command_buffer = @as(types.VkCommandBuffer, @ptrFromInt(@as(usize, 0x2600)));
+    try renderer.encode(command_buffer);
+    renderer.endFrame();
+
+    try std.testing.expectEqual(@as(u32, @intCast(quads.len)), TestCapture.last_draw_instance_count);
 }
 
 test "TextRenderer.beginFrame queues quads and encodes draw call" {

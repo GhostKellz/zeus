@@ -3,6 +3,9 @@ const types = @import("types.zig");
 const errors = @import("error.zig");
 const device_mod = @import("device.zig");
 const loader = @import("loader.zig");
+const physical_device = @import("physical_device.zig");
+
+const log = std.log.scoped(.memory);
 
 pub const MemoryTypeFilter = struct {
     required_flags: types.VkMemoryPropertyFlags = 0,
@@ -125,6 +128,27 @@ pub fn allocateWithSize(device: *device_mod.Device, size: types.VkDeviceSize, ty
         .size = size,
         .type_index = type_index,
     };
+}
+
+pub fn logReBARUsage(memory_props: types.VkPhysicalDeviceMemoryProperties, type_index: u32, size: types.VkDeviceSize) void {
+    if (type_index >= memory_props.memoryTypeCount) return;
+
+    const flags = memory_props.memoryTypes[type_index].propertyFlags;
+    const rebar_available = physical_device.detectReBAR(memory_props);
+    const host_visible_device_local = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    const using_rebar_path = (flags & host_visible_device_local) == host_visible_device_local;
+
+    if (using_rebar_path) {
+        if (rebar_available) {
+            log.debug("Using ReBAR-optimized memory (DEVICE_LOCAL | HOST_VISIBLE) size={d}", .{size});
+        } else {
+            log.debug("Host-visible device-local memory selected without detected ReBAR; size={d}", .{size});
+        }
+    } else if (rebar_available) {
+        log.debug("ReBAR available but falling back to staging-friendly memory flags=0x{x}", .{flags});
+    } else {
+        log.debug("ReBAR unavailable; using staging-friendly memory flags=0x{x}", .{flags});
+    }
 }
 
 fn makeMemoryProperties() types.VkPhysicalDeviceMemoryProperties {

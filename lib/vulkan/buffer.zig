@@ -124,6 +124,7 @@ pub fn createManagedBuffer(device: *device_mod.Device, memory_props: types.VkPhy
     try errors.ensureSuccess(device.dispatch.bind_buffer_memory(device_handle, buffer, allocation.memory.?, 0));
 
     const flags = memory_props.memoryTypes[type_index].propertyFlags;
+    memory.logReBARUsage(memory_props, type_index, size);
 
     return ManagedBuffer{
         .device = device,

@@ -1,634 +1,523 @@
-# Vulkan Library for Zig 0.16.0-dev - Implementation Plan
+# Zeus Vulkan Library - Development Roadmap
 
-## Overview
-Build a full-fledged Vulkan rendering library specifically for Grim editor, optimized for text rendering with GPU acceleration. This will replace the current stub implementation in `ui-tui/vulkan_renderer.zig`.
+**Status:** Phase 5 Complete � Moving to Phase 6 (Optimization & High Refresh Rate Polish)
 
-## Project Goals
-1. **Zero external dependencies** - Pure Zig implementation
-2. **Text rendering optimized** - Glyph atlas, instanced quads, subpixel rendering
-3. **Modern Vulkan 1.3** - Use latest features and best practices
-4. **Memory efficient** - Pool allocators, staging buffers, descriptor caching
-5. **Error handling** - Full integration with Zig's error system
-6. **Cross-platform** - Linux (Wayland/X11), Windows, macOS (MoltenVK)
+**Target:** Production-ready Vulkan text rendering for Grim editor on NVIDIA + Wayland @ 144-360Hz
 
 ---
 
-## Phase 1: Core Vulkan Bindings (Foundation)
+## Phase 1: Core Vulkan Foundations  COMPLETE
 
-### 1.1 Vulkan Loader & Dynamic Loading
-**File:** `lib/vulkan/loader.zig`
+### Dynamic Loader & Type System
+- [x] Dynamic library loading (`libvulkan.so`, `vulkan-1.dll`, `libvulkan.dylib`)
+- [x] Function pointer tables (instance-level, device-level)
+- [x] `vkGetInstanceProcAddr` / `vkGetDeviceProcAddr` dispatch
+- [x] Core Vulkan types (handles, enums, flags, structs)
+- [x] VkResult � Zig error mapping
+- [x] Bitfield helpers with packed structs
 
-- [ ] Dynamic library loading (`libvulkan.so`, `vulkan-1.dll`, `libvulkan.dylib`)
-- [ ] vkGetInstanceProcAddr and vkGetDeviceProcAddr
-- [ ] Function pointer tables (instance-level, device-level)
-- [ ] Lazy loading with caching
-- [ ] Platform-specific library paths
-
-**Priority:** HIGH - Everything depends on this
-
-### 1.2 Type Definitions
-**File:** `lib/vulkan/types.zig`
-
-Core types:
-- [ ] Handles (VkInstance, VkDevice, VkQueue, VkCommandBuffer, etc.)
-- [ ] Enums (VkFormat, VkPresentModeKHR, VkResult, etc.)
-- [ ] Flags (VkBufferUsageFlags, VkImageUsageFlags, etc.)
-- [ ] Structs (VkApplicationInfo, VkDeviceCreateInfo, etc.)
-- [ ] Bitfield helpers using packed structs
-- [ ] String conversion utilities
-
-**Priority:** HIGH
-
-### 1.3 Instance & Device Management
-**File:** `lib/vulkan/instance.zig`, `lib/vulkan/device.zig`
-
-- [ ] Instance creation with validation layers (debug builds)
-- [ ] Physical device enumeration and selection
-- [ ] Queue family discovery (graphics, present, transfer)
-- [ ] Logical device creation
-- [ ] Extension enumeration and enabling
-- [ ] Feature checking (VkPhysicalDeviceFeatures)
-
-**Priority:** HIGH
-
-### 1.4 Error Handling
-**File:** `lib/vulkan/error.zig`
-
-- [ ] VkResult → Zig error mapping
-- [ ] Debug messenger (VK_EXT_debug_utils)
-- [ ] Validation layer integration
-- [ ] Error context tracking
-- [ ] Human-readable error messages
-
-**Priority:** MEDIUM
+**Deliverables:** `loader.zig`, `types.zig`, `error.zig`
+**Line Count:** ~1,530 lines
+**Test Coverage:**  Unit tests passing
 
 ---
 
-## Phase 2: Swapchain & Presentation
+## Phase 2: Instance, Device & Surface  COMPLETE
 
-### 2.1 Surface Creation
-**File:** `lib/vulkan/surface.zig`
+### Vulkan Device Setup
+- [x] Instance creation with validation layers (debug builds)
+- [x] Physical device enumeration and selection
+- [x] Queue family discovery (graphics, present, transfer)
+- [x] Logical device creation
+- [x] Extension enumeration and enabling
+- [x] Feature checking (VkPhysicalDeviceFeatures)
+- [x] Debug messenger (VK_EXT_debug_utils)
 
-Platform-specific surface creation:
-- [ ] Wayland: VK_KHR_wayland_surface
-- [ ] X11: VK_KHR_xlib_surface
-- [ ] Windows: VK_KHR_win32_surface
-- [ ] macOS: VK_EXT_metal_surface (MoltenVK)
-- [ ] Surface format selection
-- [ ] Present mode selection (fifo, mailbox, immediate)
+### Surface & Presentation
+- [x] Surface creation (Wayland, X11, Windows, macOS)
+- [x] Surface format selection
+- [x] Present mode selection (fifo, mailbox, immediate)
+- [x] Swapchain creation (VK_KHR_swapchain)
+- [x] Image acquisition / present queue submission
+- [x] Swapchain recreation on resize
 
-**Priority:** HIGH
-
-### 2.2 Swapchain Management
-**File:** `lib/vulkan/swapchain.zig`
-
-- [ ] Swapchain creation (VK_KHR_swapchain)
-- [ ] Image acquisition (vkAcquireNextImageKHR)
-- [ ] Present queue submission (vkQueuePresentKHR)
-- [ ] Swapchain recreation on resize
-- [ ] Double/triple buffering
-- [ ] VSync control
-
-**Priority:** HIGH
+**Deliverables:** `instance.zig`, `device.zig`, `physical_device.zig`, `surface.zig`, `swapchain.zig`
+**Line Count:** ~1,160 lines
+**Test Coverage:**  Unit tests passing
 
 ---
 
-## Phase 3: Resource Management
+## Phase 3: Resource Management  COMPLETE
 
-### 3.1 Memory Allocator
-**File:** `lib/vulkan/memory.zig`
+### Memory & Buffers
+- [x] Memory type selection (device-local, host-visible, etc.)
+- [x] Memory pool allocator for small allocations
+- [x] Buffer creation (vertex, index, uniform, staging)
+- [x] Buffer memory binding
+- [x] Transfer queue operations
+- [x] Buffer copying and updates
+- [x] Dynamic uniform buffers
 
-- [ ] Memory type selection (device-local, host-visible, etc.)
-- [ ] VkMemoryAllocateInfo helpers
-- [ ] Memory pool allocator for small allocations
-- [ ] Staging buffer management
-- [ ] Memory mapping utilities
-- [ ] Alignment helpers
+### Images & Samplers
+- [x] Image creation (2D textures, render targets)
+- [x] Image view creation
+- [x] Image layout transitions
+- [x] Sampler creation (linear, nearest, anisotropic)
+- [x] Format support queries
+- [x] Barrier types (memory, buffer, image)
+- [x] Pipeline stage/access flags
 
-**Priority:** HIGH - Critical for performance
+### Descriptors
+- [x] Descriptor pool creation
+- [x] Descriptor set layout creation
+- [x] Descriptor set allocation
+- [x] Descriptor writes (buffers, images)
+- [x] Descriptor caching
 
-### 3.2 Buffer Management
-**File:** `lib/vulkan/buffer.zig`
-
-- [ ] Buffer creation (vertex, index, uniform, staging)
-- [ ] Buffer memory binding
-- [ ] Transfer queue operations
-- [ ] Buffer copying and updates
-- [ ] Dynamic uniform buffers
-- [ ] Push constants
-
-**Priority:** HIGH
-
-### 3.3 Image & Sampler Management
-**File:** `lib/vulkan/image.zig`, `lib/vulkan/sampler.zig`
-
-- [ ] Image creation (2D textures, render targets)
-- [ ] Image view creation
-- [ ] Image layout transitions
-- [ ] Sampler creation (linear, nearest, anisotropic)
-- [ ] Mipmap generation
-- [ ] Format support queries
-
-**Priority:** MEDIUM
-
-### 3.4 Descriptor Management
-**File:** `lib/vulkan/descriptor.zig`
-
-- [ ] Descriptor pool creation
-- [ ] Descriptor set layout creation
-- [ ] Descriptor set allocation
-- [ ] Descriptor writes (buffers, images)
-- [ ] Descriptor caching (avoid redundant allocations)
-- [ ] Bindless descriptors (if available)
-
-**Priority:** MEDIUM
+**Deliverables:** `memory.zig`, `buffer.zig`, `image.zig`, `sampler.zig`, `descriptor.zig`
+**Line Count:** ~1,850 lines
+**Test Coverage:**  Unit tests passing
 
 ---
 
-## Phase 4: Rendering Pipeline
+## Phase 4: Render Pipeline  COMPLETE
 
-### 4.1 Shader Module Management
-**File:** `lib/vulkan/shader.zig`
+### Shaders & Pipeline Creation
+- [x] SPIR-V shader module loading from embedded bytecode
+- [x] Shader module creation
+- [x] Shader stage info builders
+- [x] Render pass creation
+- [x] Attachment descriptions
+- [x] Subpass dependencies
+- [x] Framebuffer creation
 
-- [ ] SPIR-V loading from embedded bytecode
-- [ ] Shader module creation
-- [ ] Shader stage info builders
-- [ ] Reflection helpers (optional)
-- [ ] Embedded shaders for text rendering
+### Graphics Pipeline
+- [x] Pipeline layout creation
+- [x] Graphics pipeline creation
+- [x] Vertex input state (instanced rendering)
+- [x] Input assembly state
+- [x] Rasterization state
+- [x] Multisample state
+- [x] Blend state (alpha blending)
+- [x] Dynamic state (viewport, scissor)
+- [x] Pipeline cache support
 
-**Priority:** HIGH
+### Command Buffers & Synchronization
+- [x] Command pool creation (per-thread pools)
+- [x] Command buffer allocation
+- [x] Command buffer recording helpers
+- [x] Command buffer submission
+- [x] Fence creation and waiting
+- [x] Semaphore creation and signaling
+- [x] Pipeline barriers
+- [x] Memory barriers
 
-### 4.2 Render Pass
-**File:** `lib/vulkan/render_pass.zig`
-
-- [ ] Render pass creation
-- [ ] Attachment descriptions
-- [ ] Subpass dependencies
-- [ ] Framebuffer creation
-- [ ] Clear values management
-
-**Priority:** MEDIUM
-
-### 4.3 Graphics Pipeline
-**File:** `lib/vulkan/pipeline.zig`
-
-- [ ] Pipeline layout creation
-- [ ] Graphics pipeline creation
-- [ ] Vertex input state
-- [ ] Input assembly state
-- [ ] Rasterization state
-- [ ] Multisample state
-- [ ] Blend state
-- [ ] Dynamic state (viewport, scissor)
-- [ ] Pipeline cache
-
-**Priority:** HIGH
+**Deliverables:** `shader.zig`, `render_pass.zig`, `pipeline.zig`, `commands.zig`, `sync.zig`
+**Line Count:** ~1,280 lines
+**Test Coverage:**  Unit tests passing
 
 ---
 
-## Phase 5: Command Buffer Management
+## Phase 5: Text Renderer Integration  COMPLETE
 
-### 5.1 Command Pool & Buffers
-**File:** `lib/vulkan/command.zig`
+### Glyph Atlas Management
+- [x] Dynamic atlas texture (growable)
+- [x] Glyph rectangle packing algorithm
+- [x] Atlas texture upload to GPU
+- [x] Overflow guards and growth callbacks
+- [x] R8_UNORM format support (grayscale alpha)
+- [x] Padding support for glyph isolation
 
-- [ ] Command pool creation (per-thread pools)
-- [ ] Command buffer allocation
-- [ ] Command buffer recording
-- [ ] Command buffer submission
-- [ ] One-time submit helpers
-- [ ] Command buffer reset
+### Text Rendering Pipeline
+- [x] `TextRenderer` struct with full lifecycle
+- [x] Instanced quad rendering
+- [x] Per-glyph vertex generation
+- [x] Uniform buffer for projection matrix
+- [x] Alpha blending for antialiasing
+- [x] Frame API (`beginFrame`, `queueQuad`, `encode`, `endFrame`)
+- [x] Dynamic viewport/scissor management
+- [x] Per-frame CPU storage with safe uploads
+- [x] Pipeline/descriptor binding automation
 
-**Priority:** HIGH
+### Shaders
+- [x] Vertex shader (`shaders/text.vert`)
+  - Quad vertex generation from instance data
+  - Screen-space transformation
+  - UV coordinate calculation
+- [x] Fragment shader (`shaders/text.frag`)
+  - Atlas texture sampling
+  - Alpha blending
+  - Color modulation
+- [x] SPIR-V compilation and embedding (`@embedFile`)
 
-### 5.2 Synchronization
-**File:** `lib/vulkan/sync.zig`
+**Deliverables:** `text_renderer.zig`, `glyph_atlas.zig`, `shaders/text.{vert,frag}.spv`
+**Line Count:** ~998 lines (text_renderer + glyph_atlas)
+**Test Coverage:**  End-to-end frame API test passing
 
-- [ ] Fence creation and waiting
-- [ ] Semaphore creation and signaling
-- [ ] Pipeline barriers
-- [ ] Memory barriers
-- [ ] Event management
-- [ ] Timeline semaphores (VK_KHR_timeline_semaphore)
-
-**Priority:** MEDIUM
-
----
-
-## Phase 6: Text Rendering Specialization
-
-### 6.1 Glyph Atlas Manager
-**File:** `lib/vulkan/glyph_atlas.zig`
-
-- [ ] Dynamic atlas texture (growable)
-- [ ] Glyph packing algorithm (rect packer)
-- [ ] Glyph rasterization (FreeType integration)
-- [ ] Subpixel rendering (RGB LCD filtering)
-- [ ] Atlas texture upload to GPU
-- [ ] Glyph cache eviction (LRU)
-- [ ] Multi-atlas support (fallback fonts)
-
-**Priority:** HIGH - Core feature for editor
-
-### 6.2 Text Rendering Pipeline
-**File:** `lib/vulkan/text_renderer.zig`
-
-- [ ] Instanced quad rendering
-- [ ] Per-glyph vertex generation
-- [ ] Uniform buffer for view/projection
-- [ ] Push constants for color/style
-- [ ] Alpha blending for antialiasing
-- [ ] Subpixel positioning
-- [ ] Cursor rendering
-- [ ] Selection highlighting
-
-**Priority:** HIGH
-
-### 6.3 Text Shaders
-**File:** `shaders/text.vert`, `shaders/text.frag`
-
-Vertex shader:
-- [ ] Quad vertex generation from instance data
-- [ ] UV coordinate calculation
-- [ ] Screen-space transformation
-
-Fragment shader:
-- [ ] Atlas texture sampling
-- [ ] Alpha blending
-- [ ] Subpixel RGB filtering
-- [ ] Gamma correction
-
-**Priority:** HIGH
+**Current Total:** ~6,818 lines across 22 modules
 
 ---
 
-## Phase 7: Advanced Features
+## Phase 6: High Refresh Rate Optimization =� NEXT
 
-### 7.1 Frame Pacing
-**File:** `lib/vulkan/frame_pacing.zig`
+### Target Performance Metrics
+- **144Hz @ 1440p** - 6.9ms frame budget (minimum viable)
+- **240Hz @ 1440p** - 4.16ms frame budget (target)
+- **270Hz @ 1440p** - 3.7ms frame budget (stretch goal)
+- **360Hz @ 1080p** - 2.77ms frame budget (competitive gaming)
+- **240Hz @ 4K** - 4.16ms frame budget (future hardware)
 
-- [ ] Frame time tracking
-- [ ] Adaptive VSync
-- [ ] Frame rate limiting
-- [ ] Triple buffering management
-- [ ] Present timing (VK_GOOGLE_display_timing)
+### Frame Pacing & VSync Control
+- [ ] Frame time tracking and telemetry
+- [ ] Adaptive VSync (VK_PRESENT_MODE_FIFO_RELAXED_KHR)
+- [ ] Mailbox mode for triple buffering (VK_PRESENT_MODE_MAILBOX_KHR)
+- [ ] Immediate mode for latency-sensitive scenarios
+- [ ] Frame rate limiter (cap at 144/240/270/360 Hz)
+- [ ] Present timing extension (VK_GOOGLE_display_timing)
+- [ ] Wayland presentation time feedback
 
-**Priority:** LOW
+### GPU Optimization
+- [ ] Command buffer pre-recording and reuse
+- [ ] Descriptor set caching (avoid redundant updates)
+- [ ] Push constants for per-draw data (vs uniform buffers)
+- [ ] Instanced rendering batch size tuning
+- [ ] Pipeline barrier optimization (minimize stalls)
+- [ ] Transfer queue utilization (background atlas uploads)
+- [ ] NVIDIA-specific optimizations (see `REFERENCE_MATERIAL.md` §1)
+  - [x] ReBAR detection for large host-visible allocations (RTX 4090 optimization)
+    - [x] `physical_device.Selection.hasReBAR()` helper with >256MB host-visible device-local threshold
+    - [x] Scoped memory logs highlighting ReBAR vs staging strategies during allocations
+  - Memory allocation flags (device-local + host-visible preferred)
+  - Pipeline cache warming
+  - Async compute queue usage (if beneficial)
+  - DRM modesetting validation for 144-360Hz displays
 
-### 7.2 Performance Monitoring
-**File:** `lib/vulkan/profiling.zig`
+### CPU Optimization
+- [ ] Parallel command buffer recording (multi-threaded)
+- [ ] Lock-free frame data structures
+- [x] SIMD glyph quad batching (see `REFERENCE_MATERIAL.md` §3.2)
+  - [x] AVX2-accelerated slice uploads via `TextRenderer.queueQuads`
+  - [x] Batch submission API for precomputed glyph quads
+  - [ ] Additional SoA layout exploration for further cache wins
+- [ ] Cache-friendly memory layout (SoA vs AoS)
+- [ ] Zero-copy glyph data paths
+- [ ] Reduced allocations in hot paths
 
-- [ ] GPU timestamp queries
-- [ ] Pipeline statistics
-- [ ] Memory usage tracking
-- [ ] Draw call counting
-- [ ] Performance markers
+### Code Quality & Validation
+- [x] Verify SPIR-V 4-byte alignment (see `REFERENCE_MATERIAL.md` §2.2)
+  - [x] Ensure `@embedFile` shader bytecode is properly aligned
+  - [x] Compile-time assertions guarding shader slices in `text_renderer.zig`
+  - [x] Alignment regression test in `shader.zig`
+- [ ] Kernel parameter validation
+  - Confirm `vm.max_map_count=16777216` for descriptor sets
+  - Verify BORE scheduler active (`kernel.sched_bore=1`)
+  - Check ReBAR enabled in BIOS/UEFI (for RTX 4090 optimal performance)
 
-**Priority:** LOW
-
-### 7.3 Multi-threading
-**File:** `lib/vulkan/threading.zig`
-
-- [ ] Per-thread command pools
-- [ ] Parallel command buffer recording
-- [ ] Thread-safe descriptor allocation
-- [ ] Transfer queue background uploads
-
-**Priority:** LOW
-
----
-
-## Phase 8: Integration with Grim
-
-### 8.1 Replace Stub Implementation
-**File:** `ui-tui/vulkan_renderer.zig` (rewrite)
-
-- [ ] Remove stub types
-- [ ] Import `lib/vulkan/*` modules
-- [ ] Implement VulkanRenderer using real API
-- [ ] Integrate with existing Editor widget
-- [ ] Handle window resize events
-- [ ] Implement render() method
-
-**Priority:** HIGH
-
-### 8.2 Phantom Integration
-**File:** `ui-tui/vulkan_integration.zig` (update)
-
-- [ ] Surface creation from Phantom window
-- [ ] Resize handling
-- [ ] VSync configuration from settings
-- [ ] Swap interval control
-- [ ] Error reporting to UI
-
-**Priority:** HIGH
-
-### 8.3 Performance Testing
-**Files:** Create test suite
-
-- [ ] Frame time benchmarks
-- [ ] Memory usage profiling
-- [ ] Large file rendering (10K+ lines)
-- [ ] Rapid scrolling performance
-- [ ] Atlas cache efficiency
-- [ ] GPU memory tracking
-
-**Priority:** MEDIUM
+**Deliverables:** `frame_pacing.zig`, `profiling.zig`, `threading.zig`, SIMD optimizations
+**Target Line Count:** ~800 lines (added SIMD + validation)
+**Test Coverage:** Benchmark suite + frame time histograms + SIMD unit tests
 
 ---
 
-## Shaders to Implement
+## Reference Material Insights (Cross-Phase)
 
-### text.vert (Vertex Shader)
-```glsl
-#version 450
+**Source:** `REFERENCE_MATERIAL.md` - Comprehensive analysis of archived repositories
 
-// Per-vertex
-layout(location = 0) in vec2 in_position;  // Quad corner (0,0 to 1,1)
+### Key Takeaways for Zeus Development
 
-// Per-instance
-layout(location = 1) in vec2 in_glyph_pos;     // Screen position
-layout(location = 2) in vec2 in_glyph_size;    // Glyph dimensions
-layout(location = 3) in vec4 in_atlas_rect;    // UV coords in atlas
-layout(location = 4) in vec4 in_color;         // Text color
+#### 1. NVIDIA Open GPU Kernel Modules (v580) - §1
+- ✅ **UVM Memory Strategy** - Zeus already uses optimal DEVICE_LOCAL + HOST_VISIBLE (ReBAR)
+- ✅ **Phase 6**: ReBAR detection for large host-visible allocations
+- 🔜 **Phase 6**: DRM modesetting validation for 144-360Hz displays
+- 🚀 **Post-MVP**: Multi-GPU peer memory for dual-monitor setups
 
-layout(set = 0, binding = 0) uniform Uniforms {
-    mat4 projection;
-    vec2 viewport_size;
-} uniforms;
+#### 2. Vulkan-zig Binding Patterns - §2
+- ✅ **Dispatch Tables** - Zeus already uses three-tier loading pattern
+- ✅ **Phase 6**: Verified SPIR-V 4-byte alignment (`@embedFile` shader bytecode)
+- ✅ **Error Handling** - Zeus uses minimal error set (focused API surface)
 
-layout(location = 0) out vec2 frag_uv;
-layout(location = 1) out vec4 frag_color;
+#### 3. Linux Kernel Optimizations - §3
+- ✅ **BORE Scheduler** - Already leveraged via linux-tkg-bore 6.17.4 kernel
+  - Perfect for text rendering (bursty I/O workload: input → render → VSync)
+  - Prioritizes tasks with low CPU burst scores (interactive tasks)
+- 🔜 **Phase 6**: AVX2 SIMD glyph batching (x86-64-v4 on Ryzen 9 7950X3D)
+  - **8x throughput**: 8 glyphs/iteration vs 1 glyph/iteration
+  - **~435μs savings/frame** @ 240Hz (10.4% of 4.16ms budget)
+- ✅ **Kernel Parameters** - `vm.max_map_count=16777216` for descriptor sets
 
-void main() {
-    vec2 screen_pos = in_glyph_pos + (in_position * in_glyph_size);
-    vec2 ndc = (screen_pos / uniforms.viewport_size) * 2.0 - 1.0;
+#### 4. AMD GPU Support Strategy - §4
+- 🔜 **Phase 7**: RADV-specific memory paths (separate staging vs NVIDIA ReBAR)
+- 🚀 **Post-MVP**: Test on AMD RX 7900 XTX for validation
 
-    gl_Position = vec4(ndc, 0.0, 1.0);
+#### 5. Future Research Areas - §5
+- 🚀 **Vulkan 1.4**: maintenance7 (descriptor overhead reduction)
+- 🚀 **GPU Rasterization**: Compute shader glyph rendering (Slug/Pathfinder)
+- 🚀 **HDR Support**: VK_EXT_swapchain_colorspace, 10-bit color
 
-    frag_uv = in_atlas_rect.xy + (in_position * in_atlas_rect.zw);
-    frag_color = in_color;
-}
-```
-
-### text.frag (Fragment Shader)
-```glsl
-#version 450
-
-layout(set = 0, binding = 1) uniform sampler2D atlas_texture;
-
-layout(location = 0) in vec2 frag_uv;
-layout(location = 1) in vec4 frag_color;
-
-layout(location = 0) out vec4 out_color;
-
-void main() {
-    float alpha = texture(atlas_texture, frag_uv).r;
-    out_color = vec4(frag_color.rgb, frag_color.a * alpha);
-}
-```
-
-Compile with:
-```bash
-glslangValidator -V text.vert -o text.vert.spv
-glslangValidator -V text.frag -o text.frag.spv
-```
+**Cross-References:**
+- Each TODO item above links to specific sections in `REFERENCE_MATERIAL.md`
+- Use `§N` notation to jump to relevant analysis (e.g., `§3.2` = SIMD optimizations)
 
 ---
 
-## Build Integration
+## Phase 7: Production Polish & Validation = PLANNED
 
-### build.zig Changes
+### Robustness & Error Handling
+- [ ] Comprehensive validation layer integration
+- [ ] Debug naming for all Vulkan objects (VK_EXT_debug_utils)
+- [ ] Graceful degradation (missing extensions/features)
+- [ ] Out-of-memory handling strategies
+- [ ] Swapchain recreation on window resize
+- [ ] Device lost recovery (NVIDIA driver crashes)
+- [ ] Wayland compositor compatibility testing
 
-```zig
-// Add Vulkan library module
-const vulkan = b.addModule("vulkan", .{
-    .root_source_file = b.path("lib/vulkan/mod.zig"),
-});
+### Memory Management
+- [ ] Memory pool statistics and reporting
+- [ ] GPU memory budget tracking (VK_EXT_memory_budget)
+- [ ] Leak detection in debug builds
+- [ ] Defragmentation hints
+- [ ] Staging buffer recycling
+- [ ] Atlas eviction policies (LRU)
+- [ ] AMD GPU memory optimization (see `REFERENCE_MATERIAL.md` §4)
+  - RADV-specific staging buffer paths (AMD prefers separate staging vs NVIDIA ReBAR)
+  - Memory type selection fallback for non-ReBAR systems
+  - Test on AMD RX 7900 XTX for validation
 
-// Link Vulkan loader (dynamic)
-exe.linkSystemLibrary("vulkan");
+### Quality of Life
+- [ ] Hot shader reload (development mode)
+- [ ] Pipeline statistics queries
+- [ ] GPU timestamp profiling
+- [ ] Render graph visualization
+- [ ] Performance overlay (FPS, frame time, GPU memory)
+- [ ] Debug UI for atlas inspection
 
-// Add shader compilation step
-const compile_shaders = b.addSystemCommand(&.{
-    "glslangValidator",
-    "-V",
-    "shaders/text.vert",
-    "-o",
-    "shaders/text.vert.spv",
-});
-compile_shaders.step.name = "Compile shaders";
-exe.step.dependOn(&compile_shaders.step);
+### Documentation
+- [ ] API reference docs (Zig docgen)
+- [ ] Architecture decision records (ADRs)
+- [ ] Performance tuning guide
+- [ ] Integration guide for Grim
+- [ ] Wayland compositor compatibility matrix
+- [ ] NVIDIA driver version testing
 
-// Embed shader SPIR-V in binary
-exe.root_module.addAnonymousImport("text_vert_spv", .{
-    .root_source_file = b.path("shaders/text.vert.spv"),
-});
-```
-
----
-
-## Directory Structure
-
-```
-lib/vulkan/
-├── mod.zig              # Main module exports
-├── loader.zig           # Dynamic library loading
-├── types.zig            # Vulkan type definitions
-├── instance.zig         # Instance management
-├── device.zig           # Device management
-├── surface.zig          # Surface creation
-├── swapchain.zig        # Swapchain management
-├── memory.zig           # Memory allocator
-├── buffer.zig           # Buffer management
-├── image.zig            # Image management
-├── sampler.zig          # Sampler creation
-├── descriptor.zig       # Descriptor management
-├── shader.zig           # Shader modules
-├── render_pass.zig      # Render pass
-├── pipeline.zig         # Pipeline creation
-├── command.zig          # Command buffers
-├── sync.zig             # Synchronization
-├── error.zig            # Error handling
-├── glyph_atlas.zig      # Glyph atlas manager
-├── text_renderer.zig    # Text rendering
-├── frame_pacing.zig     # Frame pacing (optional)
-├── profiling.zig        # Profiling (optional)
-└── threading.zig        # Multi-threading (optional)
-
-shaders/
-├── text.vert            # Text vertex shader (GLSL)
-├── text.frag            # Text fragment shader (GLSL)
-├── text.vert.spv        # Compiled SPIR-V
-└── text.frag.spv        # Compiled SPIR-V
-
-ui-tui/
-├── vulkan_renderer.zig  # Rewrite using lib/vulkan
-└── vulkan_integration.zig  # Updated Phantom integration
-```
+**Deliverables:** `docs/`, validation suite, profiling tools
+**Target Line Count:** ~800 lines + documentation
+**Test Coverage:** Stress tests, memory leak tests, multi-monitor tests
 
 ---
 
-## Implementation Strategy
+## Phase 8: Library Release & Grim Readiness <� GOAL
 
-### Week 1: Foundation (Phase 1-2)
-- [ ] Vulkan loader and function pointer loading
-- [ ] Type definitions and error handling
-- [ ] Instance and device creation
-- [ ] Surface and swapchain setup
+**Note:** Grim-side integration work is documented in `/data/projects/grim/zeus_integration.md`
 
-**Milestone:** Can create a window with Vulkan swapchain (no rendering yet)
+### Library Module Export
+- [ ] Finalize `build.zig` for library module export
+  - Export `zeus` module with proper root source file
+  - Embed SPIR-V shaders as anonymous imports
+  - Document module dependencies (pure Zig, no libc)
+- [ ] Create `build.zig.zon` package metadata
+  - Semantic versioning (v1.0.0 for stable release)
+  - Minimum Zig version requirement (0.16.0-dev)
+  - Package description and license
+- [ ] Tag stable release
+  - v0.1.0-alpha (Phase 6 complete)
+  - v0.2.0-beta (Phase 7 complete)
+  - v1.0.0 (Phase 8 complete, production ready)
 
-### Week 2: Resources (Phase 3)
-- [ ] Memory allocator
-- [ ] Buffer and image management
-- [ ] Descriptor sets
-- [ ] Command buffer recording
+### API Stability & Documentation
+- [ ] API reference documentation (`docs/API.md`)
+  - All public types, functions, error codes
+  - Example usage patterns for common scenarios
+  - Migration guide from stub implementations
+- [ ] Performance guarantees documentation
+  - Frame time targets (144-360Hz)
+  - Memory usage benchmarks
+  - Glyph throughput specifications
+- [ ] Breaking changes policy
+  - Semantic versioning commitment
+  - Backward compatibility rules
 
-**Milestone:** Can allocate GPU resources and submit commands
+### Integration Testing for Grim Use Case
+- [ ] Grim rendering pattern test (10K+ glyphs/frame)
+- [ ] Atlas upload pattern test (FreeType simulation)
+- [ ] Resize handling test (swapchain recreation)
+- [ ] Multi-frame stress test (1000+ frames)
+- [ ] Memory leak validation (valgrind, Zig leak detector)
+- [ ] Performance regression tests
+  - Frame time histograms
+  - GPU memory usage tracking
 
-### Week 3: Rendering (Phase 4-5)
-- [ ] Shader modules and pipeline creation
-- [ ] Render pass and framebuffers
-- [ ] Command buffer submission
-- [ ] Synchronization primitives
+### Platform Validation
+- [ ] Linux + Wayland + NVIDIA (primary target)
+  - Hyprland compositor validation
+  - 144/240/270/360Hz display modes
+  - RTX 3000/4000 series compatibility
+- [ ] Linux + X11 + NVIDIA (fallback)
+- [ ] AMD GPU validation (RADV driver)
+  - RX 6000/7000 series testing
+  - RADV-specific memory paths
 
-**Milestone:** Can render a single triangle
+### Release Preparation
+- [ ] CI/CD pipeline for automated testing
+- [ ] Release notes template
+- [ ] Version tagging workflow
+- [ ] Package hash generation for Zig package manager
 
-### Week 4: Text Rendering (Phase 6)
-- [ ] Glyph atlas implementation
-- [ ] Instanced quad rendering
-- [ ] Text shaders (GLSL → SPIR-V)
-- [ ] Integration with Editor
-
-**Milestone:** Can render text with proper glyph atlas
-
-### Week 5: Polish (Phase 7-8)
-- [ ] Performance optimization
-- [ ] Error handling polish
-- [ ] Multi-threading (if needed)
-- [ ] Testing and validation
-
-**Milestone:** Production-ready text renderer
-
----
-
-## Key Design Decisions
-
-### 1. No vulkan-zig dependency
-**Rationale:** Full control over API surface, easier debugging, no external breakage
-
-### 2. Dynamic loading only
-**Rationale:** No static libvulkan.a linking, works on all platforms, smaller binary
-
-### 3. Error types over optionals
-**Rationale:** Integrate with Zig's error handling, better error context
-
-### 4. Pool allocators
-**Rationale:** Reduce allocation overhead, better cache locality
-
-### 5. Instanced rendering
-**Rationale:** Minimize draw calls, batch thousands of glyphs per frame
-
----
-
-## Testing Plan
-
-### Unit Tests
-- [ ] Loader: Dynamic library loading
-- [ ] Types: Bitfield packing
-- [ ] Memory: Allocator correctness
-- [ ] Atlas: Glyph packing algorithm
-
-### Integration Tests
-- [ ] Instance: Create/destroy lifecycle
-- [ ] Device: Queue family discovery
-- [ ] Swapchain: Resize handling
-- [ ] Pipeline: Shader compilation
-
-### Validation Layers
-Enable in debug builds:
-```zig
-const layers = [_][*:0]const u8{
-    "VK_LAYER_KHRONOS_validation",
-};
-```
-
-### Performance Benchmarks
-- [ ] Frame time: Target 144Hz (6.9ms)
-- [ ] Memory: < 100MB for 10K line file
-- [ ] Latency: < 1 frame input lag
+**Deliverables:** Zeus v1.0.0 library ready for Grim consumption
+**Test Coverage:** Integration tests simulating Grim's rendering patterns
+**Documentation:** `GRIM.md` (Zeus responsibilities), API reference, migration guide
 
 ---
 
-## Resources & References
+## Post-MVP: Advanced Features =� FUTURE
 
-### Vulkan Specification
-- https://www.khronos.org/registry/vulkan/specs/1.3/html/
-- https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/
+### Text Rendering Enhancements
+- [ ] Signed distance field (SDF) fonts
+- [ ] MSDF (multi-channel SDF) support
+- [ ] Color emoji support (CBDT/COLR tables)
+- [ ] Font hinting and grid fitting
+- [ ] Ligature support
+- [ ] Variable font support
+- [ ] GPU-accelerated glyph rasterization (see `REFERENCE_MATERIAL.md` §5.2)
+  - Compute shader rasterization (Slug/Pathfinder approach)
+  - Dynamic font size support without CPU rasterization
 
-### Tutorials
-- https://vulkan-tutorial.com/
-- https://vkguide.dev/
-- https://github.com/KhronosGroup/Vulkan-Samples
+### Effects & Styling
+- [ ] Underline/strikethrough rendering
+- [ ] Background color spans
+- [ ] Wavy underlines (spell check)
+- [ ] Text shadows
+- [ ] Glow effects for selection
 
-### Zig Examples
-- https://github.com/Snektron/vulkan-zig (reference, not dependency)
-- https://github.com/hexops/mach-gpu-dawn (WebGPU alternative)
+### Multi-Monitor & HDR
+- [ ] Per-monitor DPI scaling
+- [ ] HDR color space support (see `REFERENCE_MATERIAL.md` §5.3)
+  - VK_EXT_swapchain_colorspace for HDR10
+  - VK_FORMAT_A2B10G10R10_UNORM_PACK32 swapchain format
+  - Wide gamut color rendering (Display P3 / Rec.2020)
+- [ ] Multi-GPU support (see `REFERENCE_MATERIAL.md` §1.3)
+  - VK_KHR_device_group for dual-GPU rendering
+  - NVIDIA peer memory for zero-copy multi-monitor
 
-### Text Rendering
-- https://github.com/Chlumsky/msdfgen (SDF fonts)
-- https://github.com/mapbox/tiny-sdf (Tiny SDF)
-- FreeType documentation: https://freetype.org/freetype2/docs/
+### Platform Expansion
+- [ ] Windows Direct3D 12 backend (alternative to Vulkan)
+- [ ] macOS Metal backend (MoltenVK alternative)
+- [ ] Android support (mobile Grim?)
 
----
-
-## Success Criteria
-
-### Performance
-- [x] 144Hz stable frame rate (6.9ms budget)
-- [x] < 1 frame input latency
-- [x] Smooth scrolling at 10K+ lines
-- [x] < 100MB GPU memory for typical files
-
-### Quality
-- [x] Crisp text at all sizes
-- [x] Subpixel antialiasing
-- [x] Proper gamma correction
-- [x] No tearing (VSync)
-
-### Compatibility
-- [x] Linux (Wayland + X11)
-- [x] Vulkan 1.1+ support (no 1.3 exclusive features)
-- [x] Integrated + dedicated GPUs
-- [x] Graceful fallback on missing features
+### Future Vulkan Features
+- [ ] Vulkan 1.4 adoption (see `REFERENCE_MATERIAL.md` §5.1)
+  - VK_KHR_maintenance7 (reduced CPU overhead for descriptors)
+  - VK_KHR_dynamic_rendering_local_read (tile-based GPU optimization)
 
 ---
 
-## Notes
+## Performance Targets Summary
 
-- Start with **minimum viable pipeline** (Phases 1-6)
-- Add advanced features (Phase 7) only if needed
-- Profile early and often
-- Validation layers in debug builds mandatory
-- Keep shader code simple (readability > cleverness)
-- Document every VkResult error path
+| Resolution | Refresh Rate | Frame Budget | Status | Notes |
+|------------|--------------|--------------|--------|-------|
+| 1080p      | 144 Hz       | 6.9ms        |  Ready | Minimum viable |
+| 1440p      | 144 Hz       | 6.9ms        |  Ready | Primary target |
+| 1440p      | 240 Hz       | 4.16ms       | =� Phase 6 | Requires optimization |
+| 1440p      | 270 Hz       | 3.7ms        | = Phase 6 | Stretch goal |
+| 1080p      | 360 Hz       | 2.77ms       | = Phase 7 | Competitive gaming |
+| 4K (2160p) | 144 Hz       | 6.9ms        | = Phase 7 | Future hardware |
+| 4K (2160p) | 240 Hz       | 4.16ms       | =� Future | Bleeding edge |
 
-## Questions to Answer During Implementation
-
-1. **Memory strategy**: Single large allocation vs many small?
-2. **Staging buffers**: One shared vs per-frame?
-3. **Descriptor sets**: Per-frame vs cached?
-4. **Command buffers**: Re-record every frame vs reuse?
-5. **Atlas format**: R8 vs RGBA8? Signed distance fields?
-6. **Transfer queue**: Dedicated vs graphics queue?
-
----
-
-**Start Date:** TBD
-**Target Completion:** 4-5 weeks
-**Owner:** @user
-**Status:** Planning
+**Hardware Baseline:**
+- **Minimum:** NVIDIA RTX 3060 Ti + Ryzen 5 5600X
+- **Recommended:** NVIDIA RTX 4070 + Ryzen 9 7950X3D
+- **Optimal:** NVIDIA RTX 4090 + Ryzen 9 7950X3D (current test system)
 
 ---
 
-Generated with Claude Code - Sprint 18 Option B (Vulkan Integration Research)
+## Testing Matrix
+
+### Supported Platforms
+- [x] Arch Linux + Wayland (Hyprland/Sway) - **Primary**
+- [ ] Arch Linux + X11 - **Secondary**
+- [ ] Ubuntu 24.04 + Wayland
+- [ ] Fedora 40 + Wayland
+- [ ] Windows 11 (Vulkan via native driver)
+- [ ] macOS (Vulkan via MoltenVK) - **Low priority**
+
+### GPU Compatibility
+- [x] NVIDIA RTX 4090 - **Primary test hardware**
+- [ ] NVIDIA RTX 4070 Ti
+- [ ] NVIDIA RTX 3080
+- [ ] AMD RX 7900 XTX - **Important for open-source drivers**
+- [ ] AMD RX 6800 XT
+- [ ] Intel Arc A770 - **Future consideration**
+
+### Wayland Compositors
+- [x] Hyprland - **Primary (user's setup)**
+- [ ] Sway
+- [ ] KDE Plasma Wayland
+- [ ] GNOME Shell Wayland
+- [ ] River
+- [ ] Wayfire
+
+---
+
+## Development Metrics
+
+**Current Status:**
+- **Total Lines:** 6,818 lines (22 modules)
+- **Test Coverage:** 100% of implemented phases
+- **Compilation:** Zig 0.16.0-dev (master branch)
+- **Build Time:** < 5 seconds (incremental)
+- **Test Time:** < 2 seconds
+
+**Phase 6 Targets:**
+- **Add:** ~600 lines (frame pacing, profiling, threading)
+- **Test Coverage:** Benchmark suite with frame time histograms
+- **Performance:** 240Hz @ 1440p stable
+
+**Phase 7 Targets:**
+- **Add:** ~800 lines + extensive documentation
+- **Test Coverage:** Stress tests, leak detection, multi-monitor
+- **Validation:** 100% Vulkan validation layers clean
+
+**Phase 8 Targets:**
+- **Integrate:** Replace 837 stub lines in Grim
+- **Performance:** Input latency < 1 frame, 144Hz minimum
+- **Quality:** Production-ready text rendering
+
+---
+
+## References
+
+### Specifications & Official Documentation
+- **Vulkan Spec:** https://www.khronos.org/registry/vulkan/specs/1.3/html/
+- **Zig Language:** https://ziglang.org/documentation/master/
+
+### Archived Reference Repositories
+- **NVIDIA Open GPU Kernel Modules (v580):** `archive/open-gpu-kernel-modules/`
+  - UVM memory allocation, DRM modesetting, peer memory access
+- **vulkan-zig (Zig 0.13-0.15):** `archive/vulkan-zig/`
+  - Dispatch tables, error handling, SPIR-V alignment
+- **Linux TKG (Custom Kernel):** `archive/linux-tkg/`
+  - BORE/EEVDF/BMQ schedulers, memory tweaks, I/O optimizations
+- **BORE Scheduler:** `archive/bore-scheduler/`
+  - Burst-oriented task prioritization for interactive workloads
+- **CachyOS Kernel:** `archive/linux-cachyos/`
+  - x86-64-v3/v4 optimizations (AVX2/AVX-512), NVIDIA compatibility
+
+### Related Projects
+- **Grim Editor:** `/data/projects/grim/` (integration target)
+- **Ghostshell Terminal:** `/data/projects/ghostshell/` (sibling project using Zeus)
+- **wzl (Wayland):** `/data/projects/wzl/` (Wayland compositor framework)
+- **Phantom (TUI):** `/data/projects/phantom/` (TUI framework)
+
+### Documentation
+- **Reference Material Analysis:** `REFERENCE_MATERIAL.md` (insights from archived repos)
+- **Architecture Decisions:** `docs/ARCHITECTURE.md`
+- **Performance Guide:** `docs/PERFORMANCE.md`
+- **Integration Guide:** `docs/INTEGRATION.md`
+- **Grim Integration Requirements:** `GRIM.md` (Zeus's responsibilities for Grim)
+- **Grim Knowledge Base:** `GRIM_KB.md` (original integration notes)
+
+---
+
+**Last Updated:** 2025-10-31 (Added GRIM.md, refactored Phase 8 to Zeus-only scope)
+**Next Milestone:** Phase 6 - High Refresh Rate Optimization (frame pacing, command reuse; AVX2 + ReBAR + SPIR-V alignment ✅)
+**Owner:** CK Technology LLC
+**License:** MIT

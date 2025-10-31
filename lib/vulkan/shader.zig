@@ -116,3 +116,16 @@ test "createShaderStage populates struct" {
     try std.testing.expectEqual(fake_module, stage_info.module);
     try std.testing.expect(stage_info.pName != null);
 }
+
+test "embedded text shaders are 4-byte aligned" {
+    const vert_spv align(@alignOf(u32)) = @embedFile("../../shaders/text.vert.spv");
+    const frag_spv align(@alignOf(u32)) = @embedFile("../../shaders/text.frag.spv");
+
+    try std.testing.expectEqual(@as(usize, 0), @intFromPtr(vert_spv.ptr) % @alignOf(u32));
+    try std.testing.expectEqual(@as(usize, 0), @intFromPtr(frag_spv.ptr) % @alignOf(u32));
+
+    const vert_words = std.mem.bytesAsSlice(u32, vert_spv);
+    const frag_words = std.mem.bytesAsSlice(u32, frag_spv);
+    try std.testing.expect(vert_words.len > 0);
+    try std.testing.expect(frag_words.len > 0);
+}

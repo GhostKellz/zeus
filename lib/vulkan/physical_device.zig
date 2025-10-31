@@ -62,6 +62,7 @@ pub const Selection = struct {
     physical_device: types.VkPhysicalDevice,
     properties: types.VkPhysicalDeviceProperties,
     features: types.VkPhysicalDeviceFeatures,
+    memory_properties: types.VkPhysicalDeviceMemoryProperties,
     queues: QueueFamilies,
     enabled_optional_extensions: [][:0]const u8,
     score: u32,
@@ -70,6 +71,10 @@ pub const Selection = struct {
         if (self.enabled_optional_extensions.len != 0) {
             allocator.free(self.enabled_optional_extensions);
         }
+    }
+
+    pub fn hasReBAR(self: *const Selection) bool {
+        return detectReBAR(self.memory_properties);
     }
 };
 
@@ -122,6 +127,7 @@ fn evaluateDevice(instance: *instance_mod.Instance, allocator: std.mem.Allocator
     if (queue_families == null) return null;
 
     const features = instance.getPhysicalDeviceFeatures(physical);
+    const memory_properties = instance.getPhysicalDeviceMemoryProperties(physical);
     if (requirements.required_features) |needed| {
         if (!supportsFeatures(features, needed)) return null;
     }
@@ -136,9 +142,26 @@ fn evaluateDevice(instance: *instance_mod.Instance, allocator: std.mem.Allocator
         .properties = properties,
         .features = features,
         .queues = queue_families.?,
+        .memory_properties = memory_properties,
         .enabled_optional_extensions = optional_slice,
         .score = score,
     };
+}
+
+pub fn detectReBAR(props: types.VkPhysicalDeviceMemoryProperties) bool {
+    const threshold: types.VkDeviceSize = 256 * 1024 * 1024;
+    for (props.memoryHeaps[0..props.memoryHeapCount], 0..) |heap, heap_index| {
+        if ((heap.flags & types.VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) == 0) continue;
+        if (heap.size <= threshold) continue;
+        for (props.memoryTypes[0..props.memoryTypeCount]) |mem_type| {
+            if (mem_type.heapIndex != heap_index) continue;
+            const required = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+            if ((mem_type.propertyFlags & required) == required) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 fn resolveQueueFamilies(instance: *instance_mod.Instance, physical: types.VkPhysicalDevice, families: []const types.VkQueueFamilyProperties, requirements: Requirements) !?QueueFamilies {
@@ -299,4 +322,60 @@ test "supportsFeatures validates required bits" {
     try std.testing.expect(supportsFeatures(available, required));
     required.shaderInt64 = 1;
     try std.testing.expect(!supportsFeatures(available, required));
+}
+
+test "detectReBAR identifies large host-visible device local heap" {
+    var props: types.VkPhysicalDeviceMemoryProperties = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    props.memoryHeapCount = 2;
+    props.memoryHeaps[0] = .{
+        .size = 12 * 1024 * 1024 * 1024,
+        .flags = types.VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
+    };
+    props.memoryHeaps[1] = .{
+        .size = 512 * 1024 * 1024,
+        .flags = 0,
+    };
+    props.memoryTypeCount = 2;
+    props.memoryTypes[0] = .{
+        .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        .heapIndex = 0,
+    };
+    props.memoryTypes[1] = .{
+        .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+        .heapIndex = 0,
+    };
+
+    try std.testing.expect(detectReBAR(props));
+
+    var selection = Selection{
+        .physical_device = @as(types.VkPhysicalDevice, @ptrCast(@as(usize, 0x1))),
+        .properties = std.mem.zeroes(types.VkPhysicalDeviceProperties),
+        .features = std.mem.zeroes(types.VkPhysicalDeviceFeatures),
+        .memory_properties = props,
+        .queues = .{ .graphics = 0 },
+        .enabled_optional_extensions = &.{},
+        .score = 0,
+    };
+
+    try std.testing.expect(selection.hasReBAR());
+}
+
+test "detectReBAR returns false for small or non host-visible heaps" {
+    var props: types.VkPhysicalDeviceMemoryProperties = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    props.memoryHeapCount = 1;
+    props.memoryHeaps[0] = .{
+        .size = 128 * 1024 * 1024,
+        .flags = types.VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
+    };
+    props.memoryTypeCount = 2;
+    props.memoryTypes[0] = .{
+        .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        .heapIndex = 0,
+    };
+    props.memoryTypes[1] = .{
+        .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+        .heapIndex = 0,
+    };
+
+    try std.testing.expect(!detectReBAR(props));
 }
