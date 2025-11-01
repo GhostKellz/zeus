@@ -105,6 +105,143 @@ pub fn updateDescriptorSets(device: *device_mod.Device, writes: []const types.Vk
     device.dispatch.update_descriptor_sets(device_handle, @intCast(writes.len), write_ptr, @intCast(copies.len), copy_ptr);
 }
 
+pub const CacheStats = struct {
+    hits: usize,
+    misses: usize,
+    hit_rate: f32,
+};
+
+pub const DescriptorCache = struct {
+    allocator: std.mem.Allocator,
+    sets: std.AutoHashMap(u64, types.VkDescriptorSet),
+    cache_hits: usize = 0,
+    cache_misses: usize = 0,
+
+    pub fn init(allocator: std.mem.Allocator) DescriptorCache {
+        return .{
+            .allocator = allocator,
+            .sets = std.AutoHashMap(u64, types.VkDescriptorSet).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *DescriptorCache) void {
+        self.sets.deinit();
+        self.cache_hits = 0;
+        self.cache_misses = 0;
+    }
+
+    pub fn clear(self: *DescriptorCache) void {
+        self.sets.clearRetainingCapacity();
+        self.cache_hits = 0;
+        self.cache_misses = 0;
+    }
+
+    fn hashDescriptorState(
+        layout: types.VkDescriptorSetLayout,
+        buffer: ?types.VkBuffer,
+        buffer_range: types.VkDeviceSize,
+        image_view: ?types.VkImageView,
+        sampler: ?types.VkSampler,
+        image_layout: types.VkImageLayout,
+    ) u64 {
+        var hasher = std.hash.Wyhash.init(0);
+        hasher.update(std.mem.asBytes(&layout));
+        hasher.update(std.mem.asBytes(&buffer_range));
+        if (buffer) |buf| hasher.update(std.mem.asBytes(&buf));
+        if (image_view) |view| hasher.update(std.mem.asBytes(&view));
+        if (sampler) |samp| hasher.update(std.mem.asBytes(&samp));
+        hasher.update(std.mem.asBytes(&image_layout));
+        return hasher.final();
+    }
+
+    pub fn getOrCreate(
+        self: *DescriptorCache,
+        device: *device_mod.Device,
+        pool: types.VkDescriptorPool,
+        layout: types.VkDescriptorSetLayout,
+        buffer: ?types.VkBuffer,
+        buffer_range: types.VkDeviceSize,
+        image_view: ?types.VkImageView,
+        sampler: ?types.VkSampler,
+        image_layout: types.VkImageLayout,
+    ) errors.Error!types.VkDescriptorSet {
+        const key = hashDescriptorState(layout, buffer, buffer_range, image_view, sampler, image_layout);
+        if (self.sets.get(key)) |cached| {
+            self.cache_hits += 1;
+            return cached;
+        }
+
+        self.cache_misses += 1;
+
+        var allocation = try allocateDescriptorSets(device, pool, &.{layout});
+        defer allocation.deinit();
+        const descriptor_set = allocation.sets[0];
+
+        var writes: [2]types.VkWriteDescriptorSet = undefined;
+        var write_count: usize = 0;
+        const buffer_binding: u32 = 0;
+        const sampler_binding: u32 = if (buffer != null) 1 else 0;
+
+        var buffer_info: types.VkDescriptorBufferInfo = undefined;
+        if (buffer) |buf| {
+            buffer_info = types.VkDescriptorBufferInfo{
+                .buffer = buf,
+                .offset = 0,
+                .range = buffer_range,
+            };
+            writes[write_count] = types.VkWriteDescriptorSet{
+                .dstSet = descriptor_set,
+                .dstBinding = buffer_binding,
+                .descriptorType = .UNIFORM_BUFFER,
+                .descriptorCount = 1,
+                .pBufferInfo = &buffer_info,
+            };
+            write_count += 1;
+        }
+
+        var image_info: types.VkDescriptorImageInfo = undefined;
+        if ((image_view != null) != (sampler != null)) {
+            return errors.Error.FeatureNotPresent;
+        }
+
+        if (image_view != null and sampler != null) {
+            image_info = types.VkDescriptorImageInfo{
+                .sampler = sampler orelse @as(types.VkSampler, @ptrFromInt(@as(usize, 0))),
+                .imageView = image_view orelse @as(types.VkImageView, @ptrFromInt(@as(usize, 0))),
+                .imageLayout = image_layout,
+            };
+            writes[write_count] = types.VkWriteDescriptorSet{
+                .dstSet = descriptor_set,
+                .dstBinding = sampler_binding,
+                .descriptorType = .COMBINED_IMAGE_SAMPLER,
+                .descriptorCount = 1,
+                .pImageInfo = &image_info,
+            };
+            write_count += 1;
+        }
+
+        if (write_count > 0) {
+            updateDescriptorSets(device, writes[0..write_count], &.{});
+        }
+
+        try self.sets.put(key, descriptor_set);
+        return descriptor_set;
+    }
+
+    pub fn getStats(self: *DescriptorCache) CacheStats {
+        const total = self.cache_hits + self.cache_misses;
+        const rate = if (total == 0)
+            0.0
+        else
+            @as(f32, @floatFromInt(self.cache_hits)) / @as(f32, @floatFromInt(total));
+        return CacheStats{
+            .hits = self.cache_hits,
+            .misses = self.cache_misses,
+            .hit_rate = rate,
+        };
+    }
+};
+
 // Tests ---------------------------------------------------------------------
 
 const fake_pool = @as(types.VkDescriptorPool, @ptrFromInt(@as(usize, 0x1111)));
@@ -291,4 +428,81 @@ test "updateDescriptorSets forwards counts" {
     try std.testing.expectEqual(@as(usize, 1), Capture.update_calls);
     const captured_writes = Capture.last_writes orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 2), captured_writes.len);
+}
+
+test "DescriptorCache caches descriptor sets and tracks hits" {
+    Capture.reset();
+    var device = makeDevice();
+
+    var cache = DescriptorCache.init(std.testing.allocator);
+    defer cache.deinit();
+
+    const pool = fake_pool;
+    const layout = fake_layout;
+    const buffer = @as(types.VkBuffer, @ptrFromInt(@as(usize, 0x1234)));
+    const image_view = @as(types.VkImageView, @ptrFromInt(@as(usize, 0x5678)));
+    const sampler = @as(types.VkSampler, @ptrFromInt(@as(usize, 0x9ABC)));
+
+    const first = try cache.getOrCreate(&device, pool, layout, buffer, 128, image_view, sampler, types.VkImageLayout.SHADER_READ_ONLY_OPTIMAL);
+    const second = try cache.getOrCreate(&device, pool, layout, buffer, 128, image_view, sampler, types.VkImageLayout.SHADER_READ_ONLY_OPTIMAL);
+
+    try std.testing.expectEqual(first, second);
+    try std.testing.expectEqual(@as(usize, 1), Capture.update_calls);
+
+    const stats = cache.getStats();
+    try std.testing.expectEqual(@as(usize, 1), stats.misses);
+    try std.testing.expectEqual(@as(usize, 1), stats.hits);
+    try std.testing.expectApproxEqAbs(0.5, stats.hit_rate, 0.01);
+}
+
+test "DescriptorCache clear resets state" {
+    Capture.reset();
+    var device = makeDevice();
+
+    var cache = DescriptorCache.init(std.testing.allocator);
+    defer cache.deinit();
+
+    const pool = fake_pool;
+    const layout = fake_layout;
+    const buffer = @as(types.VkBuffer, @ptrFromInt(@as(usize, 0x4242)));
+    const image_view = @as(types.VkImageView, @ptrFromInt(@as(usize, 0x4343)));
+    const sampler = @as(types.VkSampler, @ptrFromInt(@as(usize, 0x4444)));
+
+    _ = try cache.getOrCreate(&device, pool, layout, buffer, 256, image_view, sampler, types.VkImageLayout.SHADER_READ_ONLY_OPTIMAL);
+    cache.clear();
+
+    const stats = cache.getStats();
+    try std.testing.expectEqual(@as(usize, 0), stats.hits);
+    try std.testing.expectEqual(@as(usize, 0), stats.misses);
+
+    // After clear we should reallocate and update descriptors again.
+    Capture.reset();
+    _ = try cache.getOrCreate(&device, pool, layout, buffer, 256, image_view, sampler, types.VkImageLayout.SHADER_READ_ONLY_OPTIMAL);
+    try std.testing.expectEqual(@as(usize, 1), Capture.update_calls);
+}
+
+test "DescriptorCache hit rate converges after warmup" {
+    Capture.reset();
+    var device = makeDevice();
+
+    var cache = DescriptorCache.init(std.testing.allocator);
+    defer cache.deinit();
+
+    const pool = fake_pool;
+    const layout = fake_layout;
+    const buffer = @as(types.VkBuffer, @ptrFromInt(@as(usize, 0x5151)));
+    const image_view = @as(types.VkImageView, @ptrFromInt(@as(usize, 0x6161)));
+    const sampler = @as(types.VkSampler, @ptrFromInt(@as(usize, 0x7171)));
+
+    const iterations: usize = 100;
+    var i: usize = 0;
+    while (i < iterations) : (i += 1) {
+        _ = try cache.getOrCreate(&device, pool, layout, buffer, 128, image_view, sampler, types.VkImageLayout.SHADER_READ_ONLY_OPTIMAL);
+    }
+
+    const stats = cache.getStats();
+    try std.testing.expectEqual(@as(usize, 1), stats.misses);
+    try std.testing.expectEqual(@as(usize, iterations - 1), stats.hits);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.99), stats.hit_rate, 0.01);
+    try std.testing.expectEqual(@as(usize, 1), Capture.update_calls);
 }

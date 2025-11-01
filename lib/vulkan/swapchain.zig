@@ -4,6 +4,54 @@ const loader = @import("loader.zig");
 const errors = @import("error.zig");
 const device_mod = @import("device.zig");
 
+pub const PresentMode = enum {
+    fifo,
+    fifo_relaxed,
+    mailbox,
+    immediate,
+
+    pub fn toVk(self: PresentMode) types.VkPresentModeKHR {
+        return switch (self) {
+            .fifo => types.VkPresentModeKHR.FIFO,
+            .fifo_relaxed => types.VkPresentModeKHR.FIFO_RELAXED,
+            .mailbox => types.VkPresentModeKHR.MAILBOX,
+            .immediate => types.VkPresentModeKHR.IMMEDIATE,
+        };
+    }
+};
+
+fn hasPresentMode(modes: []const types.VkPresentModeKHR, mode: types.VkPresentModeKHR) bool {
+    for (modes) |available| {
+        if (available == mode) return true;
+    }
+    return false;
+}
+
+pub fn selectPresentMode(available_modes: []const types.VkPresentModeKHR, preferred: PresentMode) types.VkPresentModeKHR {
+    const desired = preferred.toVk();
+    if (hasPresentMode(available_modes, desired)) return desired;
+
+    return switch (preferred) {
+        .fifo => types.VkPresentModeKHR.FIFO,
+        .fifo_relaxed => if (hasPresentMode(available_modes, types.VkPresentModeKHR.FIFO))
+            types.VkPresentModeKHR.FIFO
+        else
+            types.VkPresentModeKHR.FIFO,
+        .mailbox => blk: {
+            if (hasPresentMode(available_modes, types.VkPresentModeKHR.IMMEDIATE)) {
+                break :blk types.VkPresentModeKHR.IMMEDIATE;
+            }
+            break :blk types.VkPresentModeKHR.FIFO;
+        },
+        .immediate => blk: {
+            if (hasPresentMode(available_modes, types.VkPresentModeKHR.MAILBOX)) {
+                break :blk types.VkPresentModeKHR.MAILBOX;
+            }
+            break :blk types.VkPresentModeKHR.FIFO;
+        },
+    };
+}
+
 pub const Status = enum {
     success,
     suboptimal,
@@ -36,6 +84,34 @@ pub const Swapchain = struct {
         queue_family_indices: []const u32 = &.{},
         clipped: bool = true,
         old_swapchain: ?types.VkSwapchainKHR = null,
+    };
+
+    pub const PresentTiming = struct {
+        present_id: u32,
+        desired_present_time_ns: u64,
+    };
+
+    pub const PresentOptions = struct {
+        wait_semaphores: []const types.VkSemaphore = &.{},
+        timing: ?PresentTiming = null,
+    };
+
+    pub const PastPresentationTimings = struct {
+        allocator: std.mem.Allocator,
+        data: []types.VkPastPresentationTimingGOOGLE,
+        valid_count: usize,
+
+        pub fn slice(self: PastPresentationTimings) []const types.VkPastPresentationTimingGOOGLE {
+            return self.data[0..self.valid_count];
+        }
+
+        pub fn deinit(self: *PastPresentationTimings) void {
+            if (self.data.len != 0) {
+                self.allocator.free(self.data);
+                self.data = &.{};
+            }
+            self.valid_count = 0;
+        }
     };
 
     pub fn create(device: *device_mod.Device, allocator: std.mem.Allocator, options: CreateOptions) !Swapchain {
@@ -120,12 +196,16 @@ pub const Swapchain = struct {
     }
 
     pub fn present(self: *Swapchain, queue: types.VkQueue, wait_semaphores: []const types.VkSemaphore, image_index: u32) errors.Error!Status {
+        return self.presentWithOptions(queue, image_index, .{ .wait_semaphores = wait_semaphores });
+    }
+
+    pub fn presentWithOptions(self: *Swapchain, queue: types.VkQueue, image_index: u32, options: PresentOptions) errors.Error!Status {
         const swapchain_handle = self.handle orelse return errors.Error.DeviceCreationFailed;
-        const wait_ptr: ?[*]const types.VkSemaphore = if (wait_semaphores.len == 0) null else wait_semaphores.ptr;
-        const swapchains = [_]types.VkSwapchainKHR{swapchain_handle};
-        const indices = [_]u32{image_index};
+        const wait_ptr: ?[*]const types.VkSemaphore = if (options.wait_semaphores.len == 0) null else options.wait_semaphores.ptr;
+        var swapchains = [_]types.VkSwapchainKHR{swapchain_handle};
+        var indices = [_]u32{image_index};
         var present_info = types.VkPresentInfoKHR{
-            .waitSemaphoreCount = @intCast(wait_semaphores.len),
+            .waitSemaphoreCount = @intCast(options.wait_semaphores.len),
             .pWaitSemaphores = wait_ptr,
             .swapchainCount = 1,
             .pSwapchains = swapchains[0..].ptr,
@@ -133,8 +213,60 @@ pub const Swapchain = struct {
             .pResults = null,
         };
 
+        var present_time_storage = [_]types.VkPresentTimeGOOGLE{.{ .presentID = 0, .desiredPresentTime = 0 }};
+        var timing_info_storage = types.VkPresentTimesInfoGOOGLE{
+            .swapchainCount = 0,
+            .pTimes = null,
+        };
+
+        if (options.timing) |timing| {
+            if (!self.supportsDisplayTiming()) return errors.Error.FeatureNotPresent;
+            present_time_storage[0] = .{
+                .presentID = timing.present_id,
+                .desiredPresentTime = timing.desired_present_time_ns,
+            };
+            timing_info_storage = types.VkPresentTimesInfoGOOGLE{
+                .swapchainCount = 1,
+                .pTimes = @ptrCast(present_time_storage[0..].ptr),
+            };
+            present_info.pNext = @as(?*const anyopaque, @ptrCast(&timing_info_storage));
+        }
+
         const result = self.dispatch.queue_present(queue, &present_info);
         return classifyResult(result);
+    }
+
+    pub fn supportsDisplayTiming(self: *const Swapchain) bool {
+        return self.dispatch.get_refresh_cycle_duration_google != null and self.dispatch.get_past_presentation_timing_google != null;
+    }
+
+    pub fn queryRefreshCycleDuration(self: *Swapchain) errors.Error!?u64 {
+        const swapchain_handle = self.handle orelse return errors.Error.DeviceCreationFailed;
+        const fn_ptr = self.dispatch.get_refresh_cycle_duration_google orelse return null;
+        var duration = types.VkRefreshCycleDurationGOOGLE{ .refreshDuration = 0 };
+        try errors.ensureSuccess(fn_ptr(self.device_handle, swapchain_handle, &duration));
+        return duration.refreshDuration;
+    }
+
+    pub fn fetchPastPresentationTimings(self: *Swapchain, allocator: std.mem.Allocator) errors.Error!?PastPresentationTimings {
+        const swapchain_handle = self.handle orelse return errors.Error.DeviceCreationFailed;
+        const fn_ptr = self.dispatch.get_past_presentation_timing_google orelse return null;
+        var count: u32 = 0;
+        try errors.ensureSuccess(fn_ptr(self.device_handle, swapchain_handle, &count, null));
+
+        const alloc_count = @as(usize, @intCast(count));
+        const buffer = try allocator.alloc(types.VkPastPresentationTimingGOOGLE, alloc_count);
+        errdefer allocator.free(buffer);
+
+        if (alloc_count != 0) {
+            try errors.ensureSuccess(fn_ptr(self.device_handle, swapchain_handle, &count, buffer.ptr));
+        }
+
+        return PastPresentationTimings{
+            .allocator = allocator,
+            .data = buffer,
+            .valid_count = @as(usize, @intCast(count)),
+        };
     }
 
     pub fn getImages(self: Swapchain) []const types.VkImage {
@@ -181,6 +313,86 @@ fn classifyResult(result: types.VkResult) errors.Error!Status {
     };
 }
 
+const TestTimingCapture = struct {
+    pub var queue_present_calls: usize = 0;
+    pub var last_has_timing: bool = false;
+    pub var last_present_id: u32 = 0;
+    pub var last_desired_time: u64 = 0;
+    pub var refresh_calls: usize = 0;
+    pub var refresh_value: u64 = 0;
+    pub var past_calls: usize = 0;
+    pub var past_request_count: u32 = 0;
+
+    pub fn reset() void {
+        queue_present_calls = 0;
+        last_has_timing = false;
+        last_present_id = 0;
+        last_desired_time = 0;
+        refresh_calls = 0;
+        refresh_value = 0;
+        past_calls = 0;
+        past_request_count = 0;
+    }
+
+    pub fn queuePresent(_: types.VkQueue, info: *const types.VkPresentInfoKHR) callconv(.C) types.VkResult {
+        queue_present_calls += 1;
+        if (info.pNext) |pnext| {
+            const timing = @as(*const types.VkPresentTimesInfoGOOGLE, @ptrCast(pnext));
+            last_has_timing = true;
+            if (timing.pTimes) |times| {
+                const first = times[0];
+                last_present_id = first.presentID;
+                last_desired_time = first.desiredPresentTime;
+            }
+        } else {
+            last_has_timing = false;
+        }
+        return .SUCCESS;
+    }
+
+    pub fn getRefresh(_: types.VkDevice, _: types.VkSwapchainKHR, duration: *types.VkRefreshCycleDurationGOOGLE) callconv(.C) types.VkResult {
+        refresh_calls += 1;
+        duration.refreshDuration = refresh_value;
+        return .SUCCESS;
+    }
+
+    pub fn getPastTiming(_: types.VkDevice, _: types.VkSwapchainKHR, count: *u32, timings: ?[*]types.VkPastPresentationTimingGOOGLE) callconv(.C) types.VkResult {
+        past_calls += 1;
+        if (timings) |ptr| {
+            past_request_count = count.*;
+            if (count.* >= 2) {
+                ptr[0] = types.VkPastPresentationTimingGOOGLE{
+                    .presentID = 1,
+                    .desiredPresentTime = 100,
+                    .actualPresentTime = 110,
+                    .earliestPresentTime = 90,
+                    .presentMargin = 10,
+                };
+                ptr[1] = types.VkPastPresentationTimingGOOGLE{
+                    .presentID = 2,
+                    .desiredPresentTime = 200,
+                    .actualPresentTime = 210,
+                    .earliestPresentTime = 190,
+                    .presentMargin = 15,
+                };
+                count.* = 2;
+            } else if (count.* >= 1) {
+                ptr[0] = types.VkPastPresentationTimingGOOGLE{
+                    .presentID = 1,
+                    .desiredPresentTime = 100,
+                    .actualPresentTime = 110,
+                    .earliestPresentTime = 90,
+                    .presentMargin = 10,
+                };
+                count.* = 1;
+            }
+        } else {
+            count.* = 2;
+        }
+        return .SUCCESS;
+    }
+};
+
 test "classifyResult maps known statuses" {
     const res_ok = try classifyResult(.SUCCESS);
     try std.testing.expectEqual(Status.success, res_ok);
@@ -190,4 +402,154 @@ test "classifyResult maps known statuses" {
 
     const res_out = try classifyResult(.ERROR_OUT_OF_DATE_KHR);
     try std.testing.expectEqual(Status.out_of_date, res_out);
+}
+
+test "selectPresentMode honors preferred when available" {
+    const available = [_]types.VkPresentModeKHR{
+        .FIFO,
+        .FIFO_RELAXED,
+        .MAILBOX,
+        .IMMEDIATE,
+    };
+    const chosen_mailbox = selectPresentMode(&available, .mailbox);
+    try std.testing.expectEqual(types.VkPresentModeKHR.MAILBOX, chosen_mailbox);
+
+    const chosen_immediate = selectPresentMode(&available, .immediate);
+    try std.testing.expectEqual(types.VkPresentModeKHR.IMMEDIATE, chosen_immediate);
+
+    const chosen_relaxed = selectPresentMode(&available, .fifo_relaxed);
+    try std.testing.expectEqual(types.VkPresentModeKHR.FIFO_RELAXED, chosen_relaxed);
+}
+
+test "selectPresentMode falls back gracefully" {
+    const available = [_]types.VkPresentModeKHR{
+        .FIFO,
+    };
+    const chosen_immediate = selectPresentMode(&available, .immediate);
+    try std.testing.expectEqual(types.VkPresentModeKHR.FIFO, chosen_immediate);
+
+    const chosen_mailbox = selectPresentMode(&available, .mailbox);
+    try std.testing.expectEqual(types.VkPresentModeKHR.FIFO, chosen_mailbox);
+
+    const chosen_relaxed = selectPresentMode(&available, .fifo_relaxed);
+    try std.testing.expectEqual(types.VkPresentModeKHR.FIFO, chosen_relaxed);
+}
+
+test "presentWithOptions attaches timing when supported" {
+    TestTimingCapture.reset();
+    var dispatch = std.mem.zeroes(loader.DeviceDispatch);
+    dispatch.queue_present = TestTimingCapture.queuePresent;
+    dispatch.get_refresh_cycle_duration_google = TestTimingCapture.getRefresh;
+    dispatch.get_past_presentation_timing_google = TestTimingCapture.getPastTiming;
+
+    var swapchain = Swapchain{
+        .allocator = std.testing.allocator,
+        .device_handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x10))),
+        .dispatch = &dispatch,
+        .allocation_callbacks = null,
+        .handle = @as(types.VkSwapchainKHR, @ptrFromInt(@as(usize, 0x20))),
+        .format = types.VkFormat.B8G8R8A8_UNORM,
+        .color_space = types.VkColorSpaceKHR.SRGB_NONLINEAR,
+        .extent = .{ .width = 1, .height = 1 },
+        .image_array_layers = 1,
+        .present_mode = types.VkPresentModeKHR.FIFO,
+        .images = &.{},
+    };
+
+    const queue = @as(types.VkQueue, @ptrFromInt(@as(usize, 0x30)));
+    try swapchain.presentWithOptions(queue, 0, .{
+        .timing = .{ .present_id = 7, .desired_present_time_ns = 1234 },
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), TestTimingCapture.queue_present_calls);
+    try std.testing.expect(TestTimingCapture.last_has_timing);
+    try std.testing.expectEqual(@as(u32, 7), TestTimingCapture.last_present_id);
+    try std.testing.expectEqual(@as(u64, 1234), TestTimingCapture.last_desired_time);
+}
+
+test "presentWithOptions timing requires extension" {
+    TestTimingCapture.reset();
+    var dispatch = std.mem.zeroes(loader.DeviceDispatch);
+    dispatch.queue_present = TestTimingCapture.queuePresent;
+
+    var swapchain = Swapchain{
+        .allocator = std.testing.allocator,
+        .device_handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x11))),
+        .dispatch = &dispatch,
+        .allocation_callbacks = null,
+        .handle = @as(types.VkSwapchainKHR, @ptrFromInt(@as(usize, 0x21))),
+        .format = types.VkFormat.B8G8R8A8_UNORM,
+        .color_space = types.VkColorSpaceKHR.SRGB_NONLINEAR,
+        .extent = .{ .width = 1, .height = 1 },
+        .image_array_layers = 1,
+        .present_mode = types.VkPresentModeKHR.FIFO,
+        .images = &.{},
+    };
+
+    const queue = @as(types.VkQueue, @ptrFromInt(@as(usize, 0x31)));
+    const result = swapchain.presentWithOptions(queue, 0, .{
+        .timing = .{ .present_id = 1, .desired_present_time_ns = 55 },
+    });
+    try std.testing.expectError(errors.Error.FeatureNotPresent, result);
+    try std.testing.expectEqual(@as(usize, 0), TestTimingCapture.queue_present_calls);
+}
+
+test "queryRefreshCycleDuration uses extension" {
+    TestTimingCapture.reset();
+    TestTimingCapture.refresh_value = 16_666_667;
+
+    var dispatch = std.mem.zeroes(loader.DeviceDispatch);
+    dispatch.get_refresh_cycle_duration_google = TestTimingCapture.getRefresh;
+    dispatch.get_past_presentation_timing_google = TestTimingCapture.getPastTiming;
+    dispatch.queue_present = TestTimingCapture.queuePresent;
+
+    var swapchain = Swapchain{
+        .allocator = std.testing.allocator,
+        .device_handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x12))),
+        .dispatch = &dispatch,
+        .allocation_callbacks = null,
+        .handle = @as(types.VkSwapchainKHR, @ptrFromInt(@as(usize, 0x22))),
+        .format = types.VkFormat.B8G8R8A8_UNORM,
+        .color_space = types.VkColorSpaceKHR.SRGB_NONLINEAR,
+        .extent = .{ .width = 1, .height = 1 },
+        .image_array_layers = 1,
+        .present_mode = types.VkPresentModeKHR.FIFO,
+        .images = &.{},
+    };
+
+    const duration = try swapchain.queryRefreshCycleDuration();
+    try std.testing.expect(duration != null);
+    try std.testing.expectEqual(@as(u64, 16_666_667), duration.?);
+    try std.testing.expectEqual(@as(usize, 1), TestTimingCapture.refresh_calls);
+}
+
+test "fetchPastPresentationTimings retrieves data" {
+    TestTimingCapture.reset();
+    var dispatch = std.mem.zeroes(loader.DeviceDispatch);
+    dispatch.get_past_presentation_timing_google = TestTimingCapture.getPastTiming;
+    dispatch.queue_present = TestTimingCapture.queuePresent;
+
+    var swapchain = Swapchain{
+        .allocator = std.testing.allocator,
+        .device_handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x13))),
+        .dispatch = &dispatch,
+        .allocation_callbacks = null,
+        .handle = @as(types.VkSwapchainKHR, @ptrFromInt(@as(usize, 0x23))),
+        .format = types.VkFormat.B8G8R8A8_UNORM,
+        .color_space = types.VkColorSpaceKHR.SRGB_NONLINEAR,
+        .extent = .{ .width = 1, .height = 1 },
+        .image_array_layers = 1,
+        .present_mode = types.VkPresentModeKHR.FIFO,
+        .images = &.{},
+    };
+
+    const result = try swapchain.fetchPastPresentationTimings(std.testing.allocator);
+    try std.testing.expect(result != null);
+    var timings = result.?;
+    defer timings.deinit();
+    try std.testing.expectEqual(@as(usize, 2), timings.valid_count);
+    const slice = timings.slice();
+    try std.testing.expectEqual(@as(u32, 1), slice[0].presentID);
+    try std.testing.expectEqual(@as(u64, 210), slice[1].actualPresentTime);
+    try std.testing.expectEqual(@as(usize, 2), TestTimingCapture.past_calls);
 }

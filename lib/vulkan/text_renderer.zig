@@ -4,6 +4,7 @@ const types = @import("types.zig");
 const errors = @import("error.zig");
 const device_mod = @import("device.zig");
 const buffer = @import("buffer.zig");
+const commands = @import("commands.zig");
 const descriptor = @import("descriptor.zig");
 const render_pass = @import("render_pass.zig");
 const pipeline = @import("pipeline.zig");
@@ -48,6 +49,15 @@ const Instance = extern struct {
     color: [4]f32,
 };
 
+fn identityMatrix() [16]f32 {
+    return .{
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    };
+}
+
 comptime {
     if (@sizeOf(TextQuad) != @sizeOf(Instance))
         @compileError("TextQuad and Instance must remain layout-compatible");
@@ -66,7 +76,6 @@ pub const InitOptions = struct {
     memory_props: types.VkPhysicalDeviceMemoryProperties,
     frames_in_flight: u32 = 2,
     max_instances: u32 = 1024,
-    uniform_buffer_size: types.VkDeviceSize = 64,
     atlas_extent: types.VkExtent2D = .{ .width = 1024, .height = 1024 },
     atlas_format: types.VkFormat = .R8_UNORM,
     atlas_padding: u32 = 1,
@@ -84,7 +93,6 @@ pub const TextRenderer = struct {
     surface_format: types.VkFormat,
     frames_in_flight: u32,
     max_instances: u32,
-    uniform_buffer_size: types.VkDeviceSize,
 
     render_pass: render_pass.RenderPass,
     pipeline_layout: pipeline.PipelineLayout,
@@ -92,36 +100,30 @@ pub const TextRenderer = struct {
 
     descriptor_pool: types.VkDescriptorPool,
     descriptor_set_layout: types.VkDescriptorSetLayout,
-    descriptor_sets: descriptor.DescriptorSetAllocation,
+    descriptor_cache: descriptor.DescriptorCache,
 
     sampler: sampler_mod.Sampler,
     glyph_atlas: glyph_atlas.GlyphAtlas,
 
     vertex_buffer: buffer.ManagedBuffer,
     instance_buffer: buffer.ManagedBuffer,
-    uniform_buffers: []buffer.ManagedBuffer,
     frame_states: []FrameState,
     instance_data: []Instance,
     instances_per_frame: usize,
     instance_stride: types.VkDeviceSize,
     active_frame: ?u32,
+    command_buffers_dirty: bool,
+    projection: [16]f32,
 
     pub fn init(allocator: std.mem.Allocator, device: *device_mod.Device, options: InitOptions) errors.Error!TextRenderer {
         std.debug.assert(options.frames_in_flight > 0);
         std.debug.assert(options.max_instances > 0);
-        std.debug.assert(options.uniform_buffer_size > 0);
 
         const frame_count: usize = @intCast(options.frames_in_flight);
 
         const descriptor_bindings = [_]types.VkDescriptorSetLayoutBinding{
             .{
                 .binding = 0,
-                .descriptorType = .UNIFORM_BUFFER,
-                .descriptorCount = 1,
-                .stageFlags = types.VK_SHADER_STAGE_VERTEX_BIT,
-            },
-            .{
-                .binding = 1,
                 .descriptorType = .COMBINED_IMAGE_SAMPLER,
                 .descriptorCount = 1,
                 .stageFlags = types.VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -132,7 +134,6 @@ pub const TextRenderer = struct {
         errdefer descriptor.destroyDescriptorSetLayout(device, descriptor_set_layout);
 
         const pool_sizes = [_]types.VkDescriptorPoolSize{
-            .{ .descriptorType = .UNIFORM_BUFFER, .descriptorCount = options.frames_in_flight },
             .{ .descriptorType = .COMBINED_IMAGE_SAMPLER, .descriptorCount = options.frames_in_flight },
         };
 
@@ -143,14 +144,13 @@ pub const TextRenderer = struct {
         });
         errdefer descriptor.destroyDescriptorPool(device, descriptor_pool);
 
-        const layout_handles = try allocator.alloc(types.VkDescriptorSetLayout, frame_count);
-        defer allocator.free(layout_handles);
-        for (layout_handles) |*slot| slot.* = descriptor_set_layout;
+        const projection_range = types.VkPushConstantRange{
+            .stageFlags = types.VK_SHADER_STAGE_VERTEX_BIT,
+            .offset = 0,
+            .size = @intCast(16 * @sizeOf(f32)),
+        };
 
-        var descriptor_sets = try descriptor.allocateDescriptorSets(device, descriptor_pool, layout_handles);
-        errdefer descriptor_sets.free(device, descriptor_pool) catch {};
-
-        var pipeline_layout = try pipeline.PipelineLayout.init(device, .{ .set_layouts = &.{descriptor_set_layout} });
+        var pipeline_layout = try pipeline.PipelineLayout.init(device, .{ .set_layouts = &.{descriptor_set_layout}, .push_constants = &.{projection_range} });
         errdefer pipeline_layout.deinit();
 
         var builder = render_pass.RenderPassBuilder.init(allocator);
@@ -208,8 +208,6 @@ pub const TextRenderer = struct {
         });
         errdefer glyph_atlas_obj.deinit();
 
-        const atlas_image = glyph_atlas_obj.managedImage();
-
         const float_size = @sizeOf(f32);
         const vertex_stride: types.VkDeviceSize = 2 * float_size;
         const quad_vertex_count: types.VkDeviceSize = 4;
@@ -246,57 +244,8 @@ pub const TextRenderer = struct {
         errdefer allocator.free(frame_states);
         std.mem.set(FrameState, frame_states, .{});
 
-        var uniform_buffers = try allocator.alloc(buffer.ManagedBuffer, frame_count);
-        var created_uniform_buffers: usize = 0;
-        errdefer {
-            for (uniform_buffers[0..created_uniform_buffers]) |*buf| buf.deinit();
-            allocator.free(uniform_buffers);
-        }
-
-        while (created_uniform_buffers < frame_count) : (created_uniform_buffers += 1) {
-            uniform_buffers[created_uniform_buffers] = try buffer.createManagedBuffer(device, options.memory_props, options.uniform_buffer_size, types.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .{
-                .filter = .{
-                    .required_flags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                    .preferred_flags = types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                },
-            });
-        }
-
-        const atlas_view = atlas_image.view orelse return errors.Error.FeatureNotPresent;
-        const sampler_handle = text_sampler.handle orelse return errors.Error.FeatureNotPresent;
-
-        for (descriptor_sets.sets, 0..) |set_handle, i| {
-            var buffer_info = types.VkDescriptorBufferInfo{
-                .buffer = uniform_buffers[i].buffer,
-                .offset = 0,
-                .range = options.uniform_buffer_size,
-            };
-
-            var image_info = types.VkDescriptorImageInfo{
-                .sampler = sampler_handle,
-                .imageView = atlas_view,
-                .imageLayout = types.VkImageLayout.SHADER_READ_ONLY_OPTIMAL,
-            };
-
-            var writes = [_]types.VkWriteDescriptorSet{
-                .{
-                    .dstSet = set_handle,
-                    .dstBinding = 0,
-                    .descriptorType = .UNIFORM_BUFFER,
-                    .descriptorCount = 1,
-                    .pBufferInfo = &buffer_info,
-                },
-                .{
-                    .dstSet = set_handle,
-                    .dstBinding = 1,
-                    .descriptorType = .COMBINED_IMAGE_SAMPLER,
-                    .descriptorCount = 1,
-                    .pImageInfo = &image_info,
-                },
-            };
-
-            descriptor.updateDescriptorSets(device, writes[0..], &.{});
-        }
+        if (glyph_atlas_obj.managedImage().view == null) return errors.Error.FeatureNotPresent;
+        if (text_sampler.handle == null) return errors.Error.FeatureNotPresent;
 
         return TextRenderer{
             .allocator = allocator,
@@ -306,23 +255,23 @@ pub const TextRenderer = struct {
             .surface_format = options.surface_format,
             .frames_in_flight = options.frames_in_flight,
             .max_instances = options.max_instances,
-            .uniform_buffer_size = options.uniform_buffer_size,
             .render_pass = render_pass_obj,
             .pipeline_layout = pipeline_layout,
             .pipeline = graphics_pipeline,
             .descriptor_pool = descriptor_pool,
             .descriptor_set_layout = descriptor_set_layout,
-            .descriptor_sets = descriptor_sets,
+            .descriptor_cache = descriptor.DescriptorCache.init(allocator),
             .sampler = text_sampler,
             .glyph_atlas = glyph_atlas_obj,
             .vertex_buffer = vertex_buffer,
             .instance_buffer = instance_buffer,
-            .uniform_buffers = uniform_buffers,
             .frame_states = frame_states,
             .instance_data = instance_data,
             .instances_per_frame = instances_per_frame,
             .instance_stride = instance_stride,
             .active_frame = null,
+            .command_buffers_dirty = true,
+            .projection = identityMatrix(),
         };
     }
 
@@ -335,14 +284,15 @@ pub const TextRenderer = struct {
         const idx: usize = @intCast(frame_index);
         self.active_frame = frame_index;
         self.frame_states[idx] = .{};
+        self.command_buffers_dirty = true;
     }
 
     pub fn setProjection(self: *TextRenderer, matrix: []const f32) RenderError!void {
         if (matrix.len != 16) return error.InvalidUniformLength;
-        const frame_index = self.active_frame orelse return error.NoActiveFrame;
-        const idx: usize = @intCast(frame_index);
-        const bytes = std.mem.sliceAsBytes(matrix);
-        try self.uniform_buffers[idx].write(bytes, 0);
+        _ = self.active_frame orelse return error.NoActiveFrame;
+        const src_bytes = std.mem.sliceAsBytes(matrix);
+        const dest_bytes = std.mem.sliceAsBytes(&self.projection);
+        std.mem.copy(u8, dest_bytes, src_bytes);
     }
 
     pub fn queueQuad(self: *TextRenderer, quad: TextQuad) RenderError!void {
@@ -362,13 +312,22 @@ pub const TextRenderer = struct {
 
         state.instance_count += quads.len;
         state.needs_upload = true;
+        self.command_buffers_dirty = true;
     }
 
     pub fn encode(self: *TextRenderer, cmd: types.VkCommandBuffer) RenderError!void {
         const frame_index = self.active_frame orelse return error.NoActiveFrame;
         const idx: usize = @intCast(frame_index);
         var state = &self.frame_states[idx];
-        if (state.instance_count == 0) return;
+
+        const requires_recording = self.command_buffers_dirty or state.needs_upload;
+        if (!requires_recording) return;
+
+        if (state.instance_count == 0) {
+            self.command_buffers_dirty = false;
+            state.needs_upload = false;
+            return;
+        }
 
         if (state.needs_upload) {
             const base = self.baseInstanceIndex(frame_index);
@@ -377,6 +336,23 @@ pub const TextRenderer = struct {
             try self.instance_buffer.write(bytes, self.instanceBufferOffset(frame_index));
             state.needs_upload = false;
         }
+
+        const atlas_image = self.glyph_atlas.managedImage();
+        const atlas_view = atlas_image.view orelse return errors.Error.FeatureNotPresent;
+        const sampler_handle = self.sampler.handle orelse return errors.Error.FeatureNotPresent;
+
+        const descriptor_set = try self.descriptor_cache.getOrCreate(
+            self.device,
+            self.descriptor_pool,
+            self.descriptor_set_layout,
+            null,
+            0,
+            atlas_view,
+            sampler_handle,
+            types.VkImageLayout.SHADER_READ_ONLY_OPTIMAL,
+        );
+
+        try commands.beginRecording(self.device, cmd, .reusable, null);
 
         _ = try self.glyph_atlas.flushUploads(cmd);
 
@@ -396,15 +372,27 @@ pub const TextRenderer = struct {
         };
         self.device.dispatch.cmd_set_scissor(cmd, 0, 1, &scissor);
 
-        const descriptor_set = self.descriptor_sets.sets[idx];
         const vertex_buffers = [_]types.VkBuffer{ self.vertex_buffer.buffer, self.instance_buffer.buffer };
         const instance_offset = self.instanceBufferOffset(frame_index);
         const offsets = [_]types.VkDeviceSize{ 0, instance_offset };
 
         self.device.dispatch.cmd_bind_pipeline(cmd, types.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline.handle.?);
         self.device.dispatch.cmd_bind_descriptor_sets(cmd, types.VK_PIPELINE_BIND_POINT_GRAPHICS, self.pipeline_layout.handle.?, 0, 1, &descriptor_set, 0, null);
+        const projection_bytes = std.mem.sliceAsBytes(&self.projection);
+        self.device.dispatch.cmd_push_constants(
+            cmd,
+            self.pipeline_layout.handle.?,
+            types.VK_SHADER_STAGE_VERTEX_BIT,
+            0,
+            @intCast(projection_bytes.len),
+            @ptrCast(projection_bytes.ptr),
+        );
         self.device.dispatch.cmd_bind_vertex_buffers(cmd, 0, @intCast(vertex_buffers.len), vertex_buffers[0..].ptr, offsets[0..].ptr);
         self.device.dispatch.cmd_draw(cmd, 4, @intCast(state.instance_count), 0, 0);
+
+        try commands.endCommandBuffer(self.device, cmd);
+
+        self.command_buffers_dirty = false;
     }
 
     pub fn endFrame(self: *TextRenderer) void {
@@ -442,14 +430,6 @@ pub const TextRenderer = struct {
     }
 
     pub fn deinit(self: *TextRenderer) void {
-        for (self.uniform_buffers) |*buf| {
-            buf.deinit();
-        }
-        if (self.uniform_buffers.len > 0) {
-            self.allocator.free(self.uniform_buffers);
-            self.uniform_buffers = &.{};
-        }
-
         if (self.instance_data.len > 0) {
             self.allocator.free(self.instance_data);
             self.instance_data = &.{};
@@ -468,10 +448,7 @@ pub const TextRenderer = struct {
         self.glyph_atlas.deinit();
         self.sampler.deinit();
 
-        if (self.descriptor_sets.len() > 0) {
-            self.descriptor_sets.free(self.device, self.descriptor_pool) catch {};
-        }
-        self.descriptor_sets.deinit();
+        self.descriptor_cache.deinit();
         descriptor.destroyDescriptorPool(self.device, self.descriptor_pool);
         descriptor.destroyDescriptorSetLayout(self.device, self.descriptor_set_layout);
 
@@ -540,7 +517,6 @@ const TestCapture = struct {
     pub var destroy_image_calls: usize = 0;
     pub var destroy_image_view_calls: usize = 0;
     pub var destroy_buffer_calls: usize = 0;
-    pub var descriptor_write_uniform_ranges: [8]types.VkDeviceSize = [_]types.VkDeviceSize{0} ** 8;
     pub var descriptor_write_count: usize = 0;
     pub var last_buffer_size: types.VkDeviceSize = 0;
     pub var last_image_extent: types.VkExtent3D = .{ .width = 0, .height = 0, .depth = 0 };
@@ -550,6 +526,11 @@ const TestCapture = struct {
     pub var draw_calls: usize = 0;
     pub var set_viewport_calls: usize = 0;
     pub var set_scissor_calls: usize = 0;
+    pub var begin_command_calls: usize = 0;
+    pub var end_command_calls: usize = 0;
+    pub var push_constant_calls: usize = 0;
+    pub var last_push_size: u32 = 0;
+    pub var last_begin_flags: ?types.VkCommandBufferUsageFlags = null;
     pub var last_draw_vertex_count: u32 = 0;
     pub var last_draw_instance_count: u32 = 0;
     pub var last_instance_offset: types.VkDeviceSize = 0;
@@ -582,7 +563,6 @@ const TestCapture = struct {
         destroy_image_calls = 0;
         destroy_image_view_calls = 0;
         destroy_buffer_calls = 0;
-        descriptor_write_uniform_ranges = [_]types.VkDeviceSize{0} ** 8;
         descriptor_write_count = 0;
         last_buffer_size = 0;
         last_image_extent = .{ .width = 0, .height = 0, .depth = 0 };
@@ -593,6 +573,11 @@ const TestCapture = struct {
         draw_calls = 0;
         set_viewport_calls = 0;
         set_scissor_calls = 0;
+        begin_command_calls = 0;
+        end_command_calls = 0;
+        push_constant_calls = 0;
+        last_push_size = 0;
+        last_begin_flags = null;
         last_draw_vertex_count = 0;
         last_draw_instance_count = 0;
         last_instance_offset = 0;
@@ -613,7 +598,7 @@ fn makeHandle(comptime T: type) T {
 
 fn stubCreateDescriptorSetLayout(_: types.VkDevice, info: *const types.VkDescriptorSetLayoutCreateInfo, _: ?*const types.VkAllocationCallbacks, layout: *types.VkDescriptorSetLayout) callconv(.C) types.VkResult {
     TestCapture.descriptor_layout_calls += 1;
-    std.debug.assert(info.bindingCount == 2);
+    std.debug.assert(info.bindingCount == 1);
     layout.* = makeHandle(types.VkDescriptorSetLayout);
     return .SUCCESS;
 }
@@ -649,11 +634,8 @@ fn stubFreeDescriptorSets(_: types.VkDevice, _: types.VkDescriptorPool, count: u
 
 fn stubUpdateDescriptorSets(_: types.VkDevice, write_count: u32, writes: ?[*]const types.VkWriteDescriptorSet, _: u32, _: ?[*]const types.VkCopyDescriptorSet) callconv(.C) void {
     if (writes) |ptr| {
-        for (ptr[0..write_count], 0..) |write, idx| {
+        for (ptr[0..write_count]) |_| {
             TestCapture.update_descriptor_calls += 1;
-            if (write.descriptorType == .UNIFORM_BUFFER and write.pBufferInfo) |infos| {
-                TestCapture.descriptor_write_uniform_ranges[TestCapture.descriptor_write_count + idx] = infos[0].range;
-            }
         }
         TestCapture.descriptor_write_count += write_count;
     }
@@ -827,6 +809,24 @@ fn stubCmdSetScissor(_: types.VkCommandBuffer, first_scissor: u32, scissor_count
     TestCapture.last_scissor = scissors[0];
 }
 
+fn stubCmdPushConstants(_: types.VkCommandBuffer, _: types.VkPipelineLayout, stage_flags: types.VkShaderStageFlags, offset: u32, size: u32, _: ?*const anyopaque) callconv(.C) void {
+    TestCapture.push_constant_calls += 1;
+    TestCapture.last_push_size = size;
+    std.debug.assert(stage_flags == types.VK_SHADER_STAGE_VERTEX_BIT);
+    std.debug.assert(offset == 0);
+}
+
+fn stubBeginCommandBuffer(_: types.VkCommandBuffer, info: *const types.VkCommandBufferBeginInfo) callconv(.C) types.VkResult {
+    TestCapture.begin_command_calls += 1;
+    TestCapture.last_begin_flags = info.flags;
+    return .SUCCESS;
+}
+
+fn stubEndCommandBuffer(_: types.VkCommandBuffer) callconv(.C) types.VkResult {
+    TestCapture.end_command_calls += 1;
+    return .SUCCESS;
+}
+
 fn setupTestDispatch(device: *device_mod.Device) void {
     device.dispatch.create_descriptor_set_layout = stubCreateDescriptorSetLayout;
     device.dispatch.destroy_descriptor_set_layout = stubDestroyDescriptorSetLayout;
@@ -862,9 +862,12 @@ fn setupTestDispatch(device: *device_mod.Device) void {
     device.dispatch.cmd_bind_pipeline = stubCmdBindPipeline;
     device.dispatch.cmd_bind_descriptor_sets = stubCmdBindDescriptorSets;
     device.dispatch.cmd_bind_vertex_buffers = stubCmdBindVertexBuffers;
+    device.dispatch.cmd_push_constants = stubCmdPushConstants;
     device.dispatch.cmd_draw = stubCmdDraw;
     device.dispatch.cmd_set_viewport = stubCmdSetViewport;
     device.dispatch.cmd_set_scissor = stubCmdSetScissor;
+    device.dispatch.begin_command_buffer = stubBeginCommandBuffer;
+    device.dispatch.end_command_buffer = stubEndCommandBuffer;
 }
 
 test "TextRenderer.init wires core Vulkan objects" {
@@ -895,19 +898,17 @@ test "TextRenderer.init wires core Vulkan objects" {
         .memory_props = memory_props,
         .frames_in_flight = 2,
         .max_instances = 128,
-        .uniform_buffer_size = 64,
         .atlas_extent = .{ .width = 256, .height = 256 },
         .atlas_format = .R8_UNORM,
     });
 
     try std.testing.expectEqual(@as(u32, 2), renderer.frames_in_flight);
-    try std.testing.expectEqual(@as(usize, 2), renderer.uniform_buffers.len);
-    try std.testing.expectEqual(@as(usize, 2), renderer.descriptor_sets.len());
     try std.testing.expectEqual(types.VK_FORMAT_B8G8R8A8_SRGB, renderer.surface_format);
+    try std.testing.expect(renderer.command_buffers_dirty);
 
     try std.testing.expectEqual(@as(usize, 1), TestCapture.descriptor_layout_calls);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.descriptor_pool_calls);
-    try std.testing.expectEqual(@as(usize, 2), TestCapture.descriptor_set_count);
+    try std.testing.expectEqual(@as(usize, 0), TestCapture.descriptor_set_count);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.pipeline_layout_calls);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.render_pass_create_calls);
     try std.testing.expectEqual(@as(usize, 2), TestCapture.shader_module_create_calls);
@@ -918,12 +919,11 @@ test "TextRenderer.init wires core Vulkan objects" {
     try std.testing.expectEqual(@as(usize, 1), TestCapture.image_view_create_calls);
     try std.testing.expectEqual(@as(usize, 4), TestCapture.buffer_create_calls);
 
-    try std.testing.expectEqual(@as(usize, 4), TestCapture.update_descriptor_calls);
-    try std.testing.expectEqual(@as(types.VkDeviceSize, 64), TestCapture.descriptor_write_uniform_ranges[0]);
+    try std.testing.expectEqual(@as(usize, 0), TestCapture.update_descriptor_calls);
 
     renderer.deinit();
 
-    try std.testing.expectEqual(@as(usize, 1), TestCapture.free_descriptor_calls);
+    try std.testing.expectEqual(@as(usize, 0), TestCapture.free_descriptor_calls);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.destroy_pool_calls);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.destroy_layout_calls);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.destroy_pipeline_calls);
@@ -963,7 +963,6 @@ test "TextRenderer.queueQuads batches glyph data" {
         .memory_props = memory_props,
         .frames_in_flight = 2,
         .max_instances = 16,
-        .uniform_buffer_size = 64,
         .atlas_extent = .{ .width = 128, .height = 128 },
         .atlas_format = .R8_UNORM,
     });
@@ -989,6 +988,19 @@ test "TextRenderer.queueQuads batches glyph data" {
     renderer.endFrame();
 
     try std.testing.expectEqual(@as(u32, @intCast(quads.len)), TestCapture.last_draw_instance_count);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.begin_command_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.end_command_calls);
+    const begin_flags = TestCapture.last_begin_flags orelse @as(types.VkCommandBufferUsageFlags, 0xFFFF_FFFF);
+    try std.testing.expectEqual(@as(types.VkCommandBufferUsageFlags, 0), begin_flags);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.descriptor_set_count);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.update_descriptor_calls);
+
+    const stats = renderer.descriptor_cache.getStats();
+    try std.testing.expectEqual(@as(usize, 1), stats.misses);
+    try std.testing.expectEqual(@as(usize, 0), stats.hits);
+    try std.testing.expectEqual(@as(f32, 0.0), stats.hit_rate);
+
+    try std.testing.expect(!renderer.command_buffers_dirty);
 }
 
 test "TextRenderer.beginFrame queues quads and encodes draw call" {
@@ -1019,7 +1031,6 @@ test "TextRenderer.beginFrame queues quads and encodes draw call" {
         .memory_props = memory_props,
         .frames_in_flight = 2,
         .max_instances = 8,
-        .uniform_buffer_size = 64,
         .atlas_extent = .{ .width = 128, .height = 128 },
         .atlas_format = .R8_UNORM,
     });
@@ -1055,11 +1066,22 @@ test "TextRenderer.beginFrame queues quads and encodes draw call" {
     try std.testing.expectEqual(@as(usize, 1), TestCapture.draw_calls);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.set_viewport_calls);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.set_scissor_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.begin_command_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.end_command_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.push_constant_calls);
+    try std.testing.expectEqual(@as(u32, 64), TestCapture.last_push_size);
     try std.testing.expectEqual(@as(u32, 4), TestCapture.last_draw_vertex_count);
     try std.testing.expectEqual(@as(u32, 1), TestCapture.last_draw_instance_count);
     try std.testing.expectEqual(@as(types.VkDeviceSize, 0), TestCapture.last_instance_offset);
     try std.testing.expect(TestCapture.last_descriptor_set != null);
     try std.testing.expect(TestCapture.last_pipeline != null);
+
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.descriptor_set_count);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.update_descriptor_calls);
+
+    const stats = renderer.descriptor_cache.getStats();
+    try std.testing.expectEqual(@as(usize, 1), stats.misses);
+    try std.testing.expectEqual(@as(usize, 0), stats.hits);
 
     const viewport = TestCapture.last_viewport orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(f32, 640.0), viewport.width);
@@ -1070,4 +1092,6 @@ test "TextRenderer.beginFrame queues quads and encodes draw call" {
     try std.testing.expectEqual(@as(i32, 0), scissor.offset.y);
     try std.testing.expectEqual(@as(u32, 640), scissor.extent.width);
     try std.testing.expectEqual(@as(u32, 480), scissor.extent.height);
+
+    try std.testing.expect(!renderer.command_buffers_dirty);
 }

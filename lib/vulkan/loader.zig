@@ -196,6 +196,8 @@ pub const DeviceDispatch = struct {
     get_swapchain_images: types.PFN_vkGetSwapchainImagesKHR,
     acquire_next_image: types.PFN_vkAcquireNextImageKHR,
     queue_present: types.PFN_vkQueuePresentKHR,
+    get_refresh_cycle_duration_google: types.PFN_vkGetRefreshCycleDurationGOOGLE,
+    get_past_presentation_timing_google: types.PFN_vkGetPastPresentationTimingGOOGLE,
 
     fn load(device: types.VkDevice, proc: types.PFN_vkGetDeviceProcAddr) !DeviceDispatch {
         return DeviceDispatch{
@@ -249,6 +251,8 @@ pub const DeviceDispatch = struct {
             .get_swapchain_images = try loadDeviceProc(types.PFN_vkGetSwapchainImagesKHR, proc, device, "vkGetSwapchainImagesKHR"),
             .acquire_next_image = try loadDeviceProc(types.PFN_vkAcquireNextImageKHR, proc, device, "vkAcquireNextImageKHR"),
             .queue_present = try loadDeviceProc(types.PFN_vkQueuePresentKHR, proc, device, "vkQueuePresentKHR"),
+            .get_refresh_cycle_duration_google = loadOptionalDeviceProc(types.PFN_vkGetRefreshCycleDurationGOOGLE, proc, device, "vkGetRefreshCycleDurationGOOGLE"),
+            .get_past_presentation_timing_google = loadOptionalDeviceProc(types.PFN_vkGetPastPresentationTimingGOOGLE, proc, device, "vkGetPastPresentationTimingGOOGLE"),
         };
     }
 };
@@ -263,6 +267,14 @@ fn loadDeviceProc(comptime T: type, proc: types.PFN_vkGetDeviceProcAddr, device:
     const raw = proc(device, name);
     if (raw) |fn_ptr| return castProc(T, fn_ptr);
     return vk_errors.Error.MissingSymbol;
+}
+
+fn loadOptionalDeviceProc(comptime T: type, proc: types.PFN_vkGetDeviceProcAddr, device: types.VkDevice, name: [:0]const u8) T {
+    const raw = proc(device, name);
+    if (raw) |fn_ptr| {
+        return @as(T, @ptrCast(fn_ptr));
+    }
+    return null;
 }
 
 pub const LoaderScope = struct {

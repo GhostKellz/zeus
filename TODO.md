@@ -164,21 +164,21 @@
 - **144Hz @ 1440p** - 6.9ms frame budget (minimum viable)
 - **240Hz @ 1440p** - 4.16ms frame budget (target)
 - **270Hz @ 1440p** - 3.7ms frame budget (stretch goal)
-- **360Hz @ 1080p** - 2.77ms frame budget (competitive gaming)
+- **360Hz @ 1440p** - 2.77ms frame budget (competitive gaming)
 - **240Hz @ 4K** - 4.16ms frame budget (future hardware)
 
 ### Frame Pacing & VSync Control
-- [ ] Frame time tracking and telemetry
-- [ ] Adaptive VSync (VK_PRESENT_MODE_FIFO_RELAXED_KHR)
-- [ ] Mailbox mode for triple buffering (VK_PRESENT_MODE_MAILBOX_KHR)
-- [ ] Immediate mode for latency-sensitive scenarios
-- [ ] Frame rate limiter (cap at 144/240/270/360 Hz)
-- [ ] Present timing extension (VK_GOOGLE_display_timing)
-- [ ] Wayland presentation time feedback
+- [x] Frame time tracking and telemetry
+- [x] Adaptive VSync (VK_PRESENT_MODE_FIFO_RELAXED_KHR)
+- [x] Mailbox mode for triple buffering (VK_PRESENT_MODE_MAILBOX_KHR)
+- [x] Immediate mode for latency-sensitive scenarios
+- [x] Frame rate limiter (cap at 144/240/270/360 Hz)
+- [x] Present timing extension (VK_GOOGLE_display_timing)
+- [x] Wayland presentation time feedback
 
 ### GPU Optimization
-- [ ] Command buffer pre-recording and reuse
-- [ ] Descriptor set caching (avoid redundant updates)
+- [x] Command buffer pre-recording and reuse
+- [x] Descriptor set caching (avoid redundant updates)
 - [ ] Push constants for per-draw data (vs uniform buffers)
 - [ ] Instanced rendering batch size tuning
 - [ ] Pipeline barrier optimization (minimize stalls)

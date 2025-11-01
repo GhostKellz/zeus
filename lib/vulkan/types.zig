@@ -64,6 +64,7 @@ pub const VkStructureType = enum(u32) {
     LOADER_DEVICE_CREATE_INFO = 48,
     SWAPCHAIN_CREATE_INFO_KHR = 1000001000,
     PRESENT_INFO_KHR = 1000001001,
+    PRESENT_TIMES_INFO_GOOGLE = 1000092000,
     DEBUG_UTILS_OBJECT_NAME_INFO_EXT = 1000128000,
     DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT = 1000128004,
     DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT = 1000128005,
@@ -312,6 +313,33 @@ pub const VkPipelineBindPoint = enum(u32) {
 
 pub const VK_PIPELINE_BIND_POINT_GRAPHICS: VkPipelineBindPoint = .GRAPHICS;
 pub const VK_PIPELINE_BIND_POINT_COMPUTE: VkPipelineBindPoint = .COMPUTE;
+
+pub const VkShaderStageFlags = VkFlags;
+
+pub const VkShaderStageFlagBits = enum(VkShaderStageFlags) {
+    VERTEX_BIT = 0x00000001,
+    TESSELLATION_CONTROL_BIT = 0x00000002,
+    TESSELLATION_EVALUATION_BIT = 0x00000004,
+    GEOMETRY_BIT = 0x00000008,
+    FRAGMENT_BIT = 0x00000010,
+    COMPUTE_BIT = 0x00000020,
+    _,
+};
+
+pub const VK_SHADER_STAGE_VERTEX_BIT: VkShaderStageFlags = 0x00000001;
+pub const VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT: VkShaderStageFlags = 0x00000002;
+pub const VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT: VkShaderStageFlags = 0x00000004;
+pub const VK_SHADER_STAGE_GEOMETRY_BIT: VkShaderStageFlags = 0x00000008;
+pub const VK_SHADER_STAGE_FRAGMENT_BIT: VkShaderStageFlags = 0x00000010;
+pub const VK_SHADER_STAGE_COMPUTE_BIT: VkShaderStageFlags = 0x00000020;
+pub const VK_SHADER_STAGE_ALL_GRAPHICS: VkShaderStageFlags = 0x0000001F;
+pub const VK_SHADER_STAGE_ALL: VkShaderStageFlags = 0x7FFFFFFF;
+
+pub const VkPushConstantRange = extern struct {
+    stageFlags: VkShaderStageFlags,
+    offset: u32,
+    size: u32,
+};
 
 pub const VkExtent2D = extern struct {
     width: u32,
@@ -648,6 +676,7 @@ pub const PFN_vkCmdCopyBufferToImage = *const fn (VkCommandBuffer, VkBuffer, VkI
 pub const PFN_vkCmdBindPipeline = *const fn (VkCommandBuffer, VkPipelineBindPoint, VkPipeline) callconv(.C) void;
 pub const PFN_vkCmdBindDescriptorSets = *const fn (VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, u32, u32, *const VkDescriptorSet, u32, ?[*]const u32) callconv(.C) void;
 pub const PFN_vkCmdBindVertexBuffers = *const fn (VkCommandBuffer, u32, u32, *const VkBuffer, *const VkDeviceSize) callconv(.C) void;
+pub const PFN_vkCmdPushConstants = *const fn (VkCommandBuffer, VkPipelineLayout, VkShaderStageFlags, u32, u32, ?*const anyopaque) callconv(.C) void;
 pub const PFN_vkCmdSetViewport = *const fn (VkCommandBuffer, u32, u32, *const VkViewport) callconv(.C) void;
 pub const PFN_vkCmdSetScissor = *const fn (VkCommandBuffer, u32, u32, *const VkRect2D) callconv(.C) void;
 pub const PFN_vkCmdDraw = *const fn (VkCommandBuffer, u32, u32, u32, u32) callconv(.C) void;
@@ -1054,6 +1083,8 @@ pub const VkImageMemoryBarrier = extern struct {
 pub const PFN_vkCreateDebugUtilsMessengerEXT = ?*const fn (VkInstance, *const VkDebugUtilsMessengerCreateInfoEXT, ?*const VkAllocationCallbacks, *VkDebugUtilsMessengerEXT) callconv(.C) VkResult;
 pub const PFN_vkDestroyDebugUtilsMessengerEXT = ?*const fn (VkInstance, VkDebugUtilsMessengerEXT, ?*const VkAllocationCallbacks) callconv(.C) void;
 pub const PFN_vkSubmitDebugUtilsMessageEXT = ?*const fn (VkInstance, VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT, *const VkDebugUtilsMessengerCallbackDataEXT) callconv(.C) void;
+pub const PFN_vkGetRefreshCycleDurationGOOGLE = ?*const fn (VkDevice, VkSwapchainKHR, *VkRefreshCycleDurationGOOGLE) callconv(.C) VkResult;
+pub const PFN_vkGetPastPresentationTimingGOOGLE = ?*const fn (VkDevice, VkSwapchainKHR, *u32, ?[*]VkPastPresentationTimingGOOGLE) callconv(.C) VkResult;
 
 pub const VkSwapchainCreateFlagsKHR = VkFlags;
 
@@ -1087,6 +1118,30 @@ pub const VkPresentInfoKHR = extern struct {
     pSwapchains: [*]const VkSwapchainKHR,
     pImageIndices: [*]const u32,
     pResults: ?[*]VkResult = null,
+};
+
+pub const VkPresentTimeGOOGLE = extern struct {
+    presentID: u32,
+    desiredPresentTime: u64,
+};
+
+pub const VkPresentTimesInfoGOOGLE = extern struct {
+    sType: VkStructureType = .PRESENT_TIMES_INFO_GOOGLE,
+    pNext: ?*const anyopaque = null,
+    swapchainCount: u32,
+    pTimes: ?[*]const VkPresentTimeGOOGLE = null,
+};
+
+pub const VkRefreshCycleDurationGOOGLE = extern struct {
+    refreshDuration: u64,
+};
+
+pub const VkPastPresentationTimingGOOGLE = extern struct {
+    presentID: u32,
+    desiredPresentTime: u64,
+    actualPresentTime: u64,
+    earliestPresentTime: u64,
+    presentMargin: u64,
 };
 
 pub const VkDebugUtilsMessengerEXT = *opaque {};

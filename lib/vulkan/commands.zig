@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const errors = @import("error.zig");
 const device_mod = @import("device.zig");
+const loader = @import("loader.zig");
 
 pub const CommandPool = struct {
     device: *device_mod.Device,
@@ -92,6 +93,27 @@ pub fn beginCommandBuffer(device: *device_mod.Device, command_buffer: types.VkCo
     try errors.ensureSuccess(device.dispatch.begin_command_buffer(command_buffer, &begin_info));
 }
 
+pub const CommandBufferReusability = enum {
+    one_time,
+    reusable,
+    simultaneous,
+};
+
+pub fn beginRecording(
+    device: *device_mod.Device,
+    command_buffer: types.VkCommandBuffer,
+    reusability: CommandBufferReusability,
+    inheritance: ?*const types.VkCommandBufferInheritanceInfo,
+) !void {
+    const flags: types.VkCommandBufferUsageFlags = switch (reusability) {
+        .one_time => types.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .reusable => 0,
+        .simultaneous => types.VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
+    };
+
+    try beginCommandBuffer(device, command_buffer, flags, inheritance);
+}
+
 pub fn endCommandBuffer(device: *device_mod.Device, command_buffer: types.VkCommandBuffer) !void {
     try errors.ensureSuccess(device.dispatch.end_command_buffer(command_buffer));
 }
@@ -101,7 +123,7 @@ pub fn singleUse(device: *device_mod.Device, pool: *CommandPool, queue: types.Vk
     var lifetime = [_]types.VkCommandBuffer{command};
     defer pool.free(lifetime[0..]);
 
-    try beginCommandBuffer(device, command, types.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, null);
+    try beginRecording(device, command, .one_time, null);
     var finished = false;
     defer if (!finished) {
         _ = device.dispatch.end_command_buffer(command);
@@ -135,4 +157,45 @@ test "CommandPool reset guards null handle" {
         .flags = 0,
     };
     try pool.reset(0);
+}
+
+test "beginRecording applies correct usage flags" {
+    const fake_cmd = @as(types.VkCommandBuffer, @ptrFromInt(@as(usize, 0x1234)));
+
+    const Capture = struct {
+        pub var flags: [3]types.VkCommandBufferUsageFlags = .{0} ** 3;
+        pub var index: usize = 0;
+
+        pub fn reset() void {
+            flags = .{0} ** 3;
+            index = 0;
+        }
+
+        pub fn begin(_: types.VkCommandBuffer, info: *const types.VkCommandBufferBeginInfo) callconv(.C) types.VkResult {
+            if (index < flags.len) {
+                flags[index] = info.flags;
+            }
+            index += 1;
+            return .SUCCESS;
+        }
+    };
+
+    Capture.reset();
+
+    var device = device_mod.Device{
+        .allocator = std.testing.allocator,
+        .loader = undefined,
+        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0xDEAD))),
+        .allocation_callbacks = null,
+    };
+    device.dispatch.begin_command_buffer = Capture.begin;
+
+    try beginRecording(&device, fake_cmd, .one_time, null);
+    try beginRecording(&device, fake_cmd, .reusable, null);
+    try beginRecording(&device, fake_cmd, .simultaneous, null);
+
+    try std.testing.expectEqual(types.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, Capture.flags[0]);
+    try std.testing.expectEqual(@as(types.VkCommandBufferUsageFlags, 0), Capture.flags[1]);
+    try std.testing.expectEqual(types.VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, Capture.flags[2]);
 }
