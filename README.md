@@ -53,6 +53,10 @@ Complete `lib/vulkan/` ecosystem:
 - **Instanced quad rendering** - batch thousands of glyphs per frame
 - **Dynamic glyph atlas** - growable R8_UNORM texture with rectangle packing
 - **Frame API** - `beginFrame → queueQuad → encode → endFrame` workflow
+- **Async uploads** - optional transfer queue path with timeline semaphore waits/signals
+- **Frame telemetry** - per-frame stats callbacks and inspectors for draw/encode metrics
+- **Autotuned batching** - adaptive batch limits targeting single-draw frames within timing budgets
+- **Profiler HUD** - rolling summaries/logs of glyph throughput, draw counts, and encode timings
 - **SIMD batching** - `queueQuads` packs slices with AVX2 acceleration on x86-64
 - **Alpha blending** - proper antialiasing for crisp text
 - **Embedded shaders** - SPIR-V compiled and ready (`@embedFile`)
@@ -120,8 +124,8 @@ zeus/
 ├── src/                  # Application code (reserved)
 │   ├── main.zig
 │   └── root.zig
-├── examples/             # Standalone demos (coming in Phase 6)
-│   └── text_test.zig     # Planned: text rendering demo
+├── examples/             # Standalone demos
+│   └── simple_text.zig   # Mocked text renderer walkthrough with telemetry output
 ├── docs/                 # Documentation
 │   ├── ARCHITECTURE.md   # System design decisions
 │   ├── PERFORMANCE.md    # Optimization guide
@@ -149,6 +153,14 @@ var renderer = try zeus.TextRenderer.init(allocator, device, .{
     .memory_props = physical_device.memory_properties,
     .frames_in_flight = 2,
     .max_instances = 10000,
+    .batch_target = 512, // optional dynamic batching hints
+    .transfer_queue = .{ // optional async upload path
+        .pool = &transfer_pool,   // command pool you manage for transfer work
+        .queue = transfer_queue,  // dedicated transfer queue handle
+        .initial_timeline_value = 0,
+    },
+    .batch_autotune = true, // telemetry-driven tuning (enabled by default)
+    .profiler = .{ .log_interval = 120 }, // emit HUD summary every 120 frames
 });
 defer renderer.deinit();
 
@@ -157,7 +169,7 @@ try renderer.beginFrame(frame_index);
 
 // 3. Set projection matrix
 const projection = orthoMatrix(0, 1920, 0, 1080);
-try renderer.setProjection(frame_index, &projection);
+try renderer.setProjection(projection[0..]);
 
 // 4. Queue glyphs (instanced quads)
 for (glyphs) |glyph| {
@@ -174,11 +186,55 @@ const quads = [_]zeus.TextRenderer.TextQuad{ /* generated glyph quads */ };
 try renderer.queueQuads(quads[0..]);
 
 // 5. Encode draw commands
-try renderer.encode(command_buffer, frame_index);
+try renderer.encode(command_buffer);
 
 // 6. End frame (cleanup)
 renderer.endFrame();
+
+// 7. Read telemetry + sync (optional)
+const stats = try renderer.frameStats(frame_index);
+std.log.info("glyphs={d} draws={d} uploads={d} encode_ns={d}", .{
+    stats.glyph_count,
+    stats.draw_count,
+    stats.atlas_uploads,
+    stats.encode_cpu_ns,
+});
+
+if (try renderer.frameSyncInfo(frame_index)) |wait| {
+    // Chain this wait into your graphics queue submission.
+    // e.g. VkTimelineSemaphoreSubmitInfo wait on wait.semaphore to reach wait.value
+    // with wait.stage_mask as the destination stage mask.
+}
+
+renderer.releaseAtlasUploads();
 ```
+
+### Transfer Queue Integration
+
+Phase 6 adds an optional asynchronous upload path for the glyph atlas. Supplying
+`InitOptions.transfer_queue` wires the renderer to submit copy commands on a
+dedicated queue backed by a timeline semaphore. When atlas uploads occur, the
+renderer exposes the wait handle via `frameSyncInfo(frame_index)`, allowing the
+main graphics queue to wait on the transfer timeline without blocking CPU work.
+If no uploads happen, the call returns `null` and the render queue can proceed
+immediately. Skipping `transfer_queue` falls back to inline uploads on the
+graphics command buffer—perfect for simpler integrations. The mocked
+`examples/simple_text.zig` demo shows how to thread these waits into a frame.
+
+### Telemetry & Frame Stats
+
+Every frame records detailed telemetry (glyph/draw counts, batch limits, CPU
+time for encode/transfer, upload counts, transfer queue usage). Access these via
+`frameStats(frame_index)` after `endFrame()` or register a `stats_callback` in
+`InitOptions` to consume metrics in real time. This makes it easy to surface
+performance overlays, tune batching heuristics, or monitor atlas churn.
+
+`batch_autotune` and `batch_autotune_goal_ns` use this telemetry to update the
+active batch limit so heavy frames collapse to a single draw while lightweight
+frames stay lean. To go a step further, supply `InitOptions.profiler` (or rely on
+the default logger) to receive rolling summaries/HUD entries with glyph
+throughput, draw counts, and encode timings every N frames. You can also query
+`renderer.profilerSummary()` for the most recent aggregate.
 
 ### Glyph Atlas
 ```zig
@@ -239,7 +295,7 @@ See [`TODO.md`](TODO.md) for the complete 8-phase roadmap. Quick summary:
 - **Phase 8:** Grim integration (replace stub renderer)
 
 ### 🚀 Future
-- **Post-MVP:** SDF fonts, ligatures, HDR, multi-monitor, Android
+- **Post-MVP:** SDF fonts, ligatures, HDR, multi-monitor,Android
 
 ---
 

@@ -160,6 +160,12 @@
 
 ## Phase 6: High Refresh Rate Optimization =� NEXT
 
+### Current Sprint Focus (Nov 2025)
+- [ ] Instanced rendering batch size tuning → instrument glyph/draw ratios and auto-tune per-frame batch limits
+- [ ] Atlas upload pipeline barrier audit → collapse redundant barriers and tighten stage/access masks
+- [ ] Transfer queue async path → stage atlas uploads on dedicated queue gated by timeline semaphores
+- [ ] Frame pacing telemetry → record encode/submit durations and surface stats via CLI/debug overlay
+
 ### Target Performance Metrics
 - **144Hz @ 1440p** - 6.9ms frame budget (minimum viable)
 - **240Hz @ 1440p** - 4.16ms frame budget (target)
@@ -179,16 +185,24 @@
 ### GPU Optimization
 - [x] Command buffer pre-recording and reuse
 - [x] Descriptor set caching (avoid redundant updates)
-- [ ] Push constants for per-draw data (vs uniform buffers)
-- [ ] Instanced rendering batch size tuning
-- [ ] Pipeline barrier optimization (minimize stalls)
-- [ ] Transfer queue utilization (background atlas uploads)
+- [x] Push constants for per-draw data (vs uniform buffers)
+  - Projection now pushed per draw; update `TextRenderer` docs/tests to reflect push-constant APIs (✅ Oct 2025)
+- [ ] Instanced rendering batch size tuning **(current focus)**
+  - Instrument per-frame draw count vs glyph count; target ≤1 draw/512 glyphs while holding atlas residency
+  - Auto-adjust batch size based on `max_instances` and swapchain extent to avoid overflow
+- [ ] Pipeline barrier optimization (minimize stalls) **(current focus)**
+  - Audit current atlas upload barriers; collapse into single image barrier per frame where possible
+  - Replace full pipeline sync with stage-specific flags (`TRANSFER`→`FRAGMENT`)
+- [ ] Transfer queue utilization (background atlas uploads) **(current focus)**
+  - [x] Optional transfer queue submission path for atlas uploads (synchronous baseline)
+  - Prototype staging copies on transfer queue with timeline semaphores gating graphics usage
+  - Defer atlas transitions until just before draw during encode step
 - [ ] NVIDIA-specific optimizations (see `REFERENCE_MATERIAL.md` §1)
   - [x] ReBAR detection for large host-visible allocations (RTX 4090 optimization)
     - [x] `physical_device.Selection.hasReBAR()` helper with >256MB host-visible device-local threshold
     - [x] Scoped memory logs highlighting ReBAR vs staging strategies during allocations
   - Memory allocation flags (device-local + host-visible preferred)
-  - Pipeline cache warming
+  - Pipeline cache warming (precompile + serialize cache blobs after first run)
   - Async compute queue usage (if beneficial)
   - DRM modesetting validation for 144-360Hz displays
 
@@ -200,8 +214,11 @@
   - [x] Batch submission API for precomputed glyph quads
   - [ ] Additional SoA layout exploration for further cache wins
 - [ ] Cache-friendly memory layout (SoA vs AoS)
+  - Profile `TextRenderer.queueQuads` cache misses with perf; experiment with AoS→SoA conversion tables
 - [ ] Zero-copy glyph data paths
+  - Investigate mapping atlas staging buffers directly into FreeType raster output to avoid memcpy
 - [ ] Reduced allocations in hot paths
+  - Pool `TextQuad` scratch buffers per frame; benchmark allocator pressure pre/post
 
 ### Code Quality & Validation
 - [x] Verify SPIR-V 4-byte alignment (see `REFERENCE_MATERIAL.md` §2.2)
@@ -212,6 +229,10 @@
   - Confirm `vm.max_map_count=16777216` for descriptor sets
   - Verify BORE scheduler active (`kernel.sched_bore=1`)
   - Check ReBAR enabled in BIOS/UEFI (for RTX 4090 optimal performance)
+- [ ] Frame pacing telemetry **(current focus)**
+  - Add lightweight profiler to record frame encode + submit time histograms during tests
+  - Surface stats via CLI or debug HUD to validate 144/240/360 Hz budgets
+  - [x] Expose `TextRenderer` frame stats callback with glyph batching/upload flush counters
 
 **Deliverables:** `frame_pacing.zig`, `profiling.zig`, `threading.zig`, SIMD optimizations
 **Target Line Count:** ~800 lines (added SIMD + validation)
@@ -349,6 +370,7 @@
 ### Platform Validation
 - [ ] Linux + Wayland + NVIDIA (primary target)
   - Hyprland compositor validation
+  - KDE Plasma Wayland Session validation
   - 144/240/270/360Hz display modes
   - RTX 3000/4000 series compatibility
 - [ ] Linux + X11 + NVIDIA (fallback)
@@ -357,7 +379,7 @@
   - RADV-specific memory paths
 
 ### Release Preparation
-- [ ] CI/CD pipeline for automated testing
+- [ ] CI/CD via local scripts for automated testing leveraging my system rtx 4090 + nvidia Open 580 driver
 - [ ] Release notes template
 - [ ] Version tagging workflow
 - [ ] Package hash generation for Zig package manager
@@ -401,8 +423,8 @@
 ### Platform Expansion
 - [ ] Windows Direct3D 12 backend (alternative to Vulkan)
 - [ ] macOS Metal backend (MoltenVK alternative)
-- [ ] Android support (mobile Grim?)
-
+- [ ] Linux vulkan and vkd3d-proton support
+- [ ] Android support (Low priority)
 ### Future Vulkan Features
 - [ ] Vulkan 1.4 adoption (see `REFERENCE_MATERIAL.md` §5.1)
   - VK_KHR_maintenance7 (reduced CPU overhead for descriptors)
@@ -448,9 +470,9 @@
 - [ ] Intel Arc A770 - **Future consideration**
 
 ### Wayland Compositors
-- [x] Hyprland - **Primary (user's setup)**
+- [x] Hyprland 
 - [ ] Sway
-- [ ] KDE Plasma Wayland
+- [ ] KDE Plasma Wayland **Primary (dev workstation setup)**
 - [ ] GNOME Shell Wayland
 - [ ] River
 - [ ] Wayfire

@@ -12,6 +12,7 @@ const sampler_mod = @import("sampler.zig");
 const glyph_atlas = @import("glyph_atlas.zig");
 const shader = @import("shader.zig");
 const loader = @import("loader.zig");
+const sync = @import("sync.zig");
 
 const text_vert_spv align(@alignOf(u32)) = @embedFile("../../shaders/text.vert.spv");
 const text_frag_spv align(@alignOf(u32)) = @embedFile("../../shaders/text.frag.spv");
@@ -65,9 +66,70 @@ comptime {
         @compileError("TextQuad and Instance must share alignment");
 }
 
+pub const FrameTelemetry = struct {
+    frame_index: u32 = 0,
+    glyph_count: usize = 0,
+    draw_count: usize = 0,
+    atlas_uploads: usize = 0,
+    batch_limit: usize = 0,
+    encode_cpu_ns: u64 = 0,
+    transfer_cpu_ns: u64 = 0,
+    used_transfer_queue: bool = false,
+};
+
+pub const FrameSyncInfo = struct {
+    semaphore: types.VkSemaphore,
+    value: u64,
+    stage_mask: types.VkPipelineStageFlags,
+};
+
+pub const ProfilerSummary = struct {
+    frames: usize,
+    avg_glyphs: f64,
+    avg_draws: f64,
+    avg_encode_ns: f64,
+    avg_transfer_ns: f64,
+    glyphs_per_draw: f64,
+    max_encode_ns: u64,
+    max_draws: usize,
+};
+
+pub const ProfilerLogFn = *const fn (?*anyopaque, ProfilerSummary) void;
+
+pub const ProfilerOptions = struct {
+    log_interval: usize = 120,
+    log_callback: ?ProfilerLogFn = null,
+    log_context: ?*anyopaque = null,
+};
+
+pub const StatsCallback = *const fn (?*anyopaque, FrameTelemetry) void;
+
+pub const TransferQueueOptions = struct {
+    pool: *commands.CommandPool,
+    queue: types.VkQueue,
+    wait_stage_mask: types.VkPipelineStageFlags = types.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    initial_timeline_value: u64 = 0,
+};
+
+const TransferContext = struct {
+    base_submission: glyph_atlas.TransferSubmission,
+    timeline: sync.Semaphore,
+    wait_stage_mask: types.VkPipelineStageFlags,
+    next_signal_value: u64,
+};
+
+fn smoothEma(current: f64, sample: f64, smoothing: f64) f64 {
+    if (current == 0) return sample;
+    return current + (sample - current) * smoothing;
+}
+
 const FrameState = struct {
     instance_count: usize = 0,
     needs_upload: bool = false,
+    draw_count: usize = 0,
+    atlas_uploads: usize = 0,
+    sync_wait: ?FrameSyncInfo = null,
+    used_transfer_queue: bool = false,
 };
 
 pub const InitOptions = struct {
@@ -83,7 +145,107 @@ pub const InitOptions = struct {
     atlas_growth_context: ?*anyopaque = null,
     rasterizer: ?glyph_atlas.RasterCallback = null,
     raster_context: ?*anyopaque = null,
+    transfer_queue: ?TransferQueueOptions = null,
+    stats_callback: ?StatsCallback = null,
+    stats_context: ?*anyopaque = null,
+    batch_target: usize = 512,
+    batch_min: usize = 128,
+    batch_autotune: bool = true,
+    batch_autotune_goal_ns: u64 = 1_000_000,
+    profiler: ?ProfilerOptions = null,
 };
+
+const BatchAutoTuner = struct {
+    ema_glyphs: f64 = 0,
+    ema_draws: f64 = 0,
+    ema_encode_ns: f64 = 0,
+    ema_transfer_ns: f64 = 0,
+    frames: usize = 0,
+    cooldown: usize = 0,
+
+    fn reset(self: *BatchAutoTuner) void {
+        self.* = .{};
+    }
+};
+
+const StatsAccumulator = struct {
+    sum_glyphs: f64 = 0,
+    sum_draws: f64 = 0,
+    sum_encode_ns: f64 = 0,
+    sum_transfer_ns: f64 = 0,
+    max_encode_ns: u64 = 0,
+    max_draws: usize = 0,
+    samples: usize = 0,
+
+    fn add(self: *StatsAccumulator, stats: FrameTelemetry) void {
+        self.sum_glyphs += @as(f64, @floatFromInt(stats.glyph_count));
+        self.sum_draws += @as(f64, @floatFromInt(stats.draw_count));
+        self.sum_encode_ns += @as(f64, @floatFromInt(stats.encode_cpu_ns));
+        self.sum_transfer_ns += @as(f64, @floatFromInt(stats.transfer_cpu_ns));
+        if (stats.encode_cpu_ns > self.max_encode_ns) self.max_encode_ns = stats.encode_cpu_ns;
+        if (stats.draw_count > self.max_draws) self.max_draws = stats.draw_count;
+        self.samples += 1;
+    }
+
+    fn summary(self: StatsAccumulator) ProfilerSummary {
+        const frames = if (self.samples == 0) 1 else self.samples;
+        const avg_draws = self.sum_draws / @as(f64, @floatFromInt(frames));
+        const avg_glyphs = self.sum_glyphs / @as(f64, @floatFromInt(frames));
+        const glyphs_per_draw = if (avg_draws > 0) avg_glyphs / avg_draws else avg_glyphs;
+        return ProfilerSummary{
+            .frames = frames,
+            .avg_glyphs = avg_glyphs,
+            .avg_draws = avg_draws,
+            .avg_encode_ns = self.sum_encode_ns / @as(f64, @floatFromInt(frames)),
+            .avg_transfer_ns = self.sum_transfer_ns / @as(f64, @floatFromInt(frames)),
+            .glyphs_per_draw = glyphs_per_draw,
+            .max_encode_ns = self.max_encode_ns,
+            .max_draws = self.max_draws,
+        };
+    }
+
+    fn reset(self: *StatsAccumulator) void {
+        self.* = .{};
+    }
+};
+
+const Profiler = struct {
+    log_interval: usize,
+    log_callback: ?ProfilerLogFn,
+    log_context: ?*anyopaque,
+    accumulator: StatsAccumulator = .{},
+
+    fn record(self: *Profiler, stats: FrameTelemetry) ?ProfilerSummary {
+        self.accumulator.add(stats);
+        if (self.accumulator.samples >= self.log_interval and self.log_interval != 0) {
+            const summary = self.accumulator.summary();
+            self.accumulator.reset();
+            return summary;
+        }
+        return null;
+    }
+};
+
+fn defaultProfilerLog(summary: ProfilerSummary) void {
+    const avg_draws = summary.avg_draws;
+    const avg_glyphs = summary.avg_glyphs;
+    const glyphs_per_draw = summary.glyphs_per_draw;
+    const avg_encode_ms = summary.avg_encode_ns / 1_000_000.0;
+    const avg_transfer_ms = summary.avg_transfer_ns / 1_000_000.0;
+    std.log.info(
+        "text hud: frames={d} avg_draws={d:.2} avg_glyphs={d:.0} glyphs/draw={d:.1} encode={d:.3}ms transfer={d:.3}ms max_encode={d}µs max_draws={d}",
+        .{
+            summary.frames,
+            avg_draws,
+            avg_glyphs,
+            glyphs_per_draw,
+            avg_encode_ms,
+            avg_transfer_ms,
+            summary.max_encode_ns / 1000,
+            summary.max_draws,
+        },
+    );
+}
 
 pub const TextRenderer = struct {
     allocator: std.mem.Allocator,
@@ -114,6 +276,18 @@ pub const TextRenderer = struct {
     active_frame: ?u32,
     command_buffers_dirty: bool,
     projection: [16]f32,
+    frame_stats: []FrameTelemetry,
+    stats_callback: ?StatsCallback,
+    stats_context: ?*anyopaque,
+    batch_target: usize,
+    batch_min: usize,
+    batch_limit: usize,
+    transfer_context: ?TransferContext,
+    batch_autotune_enabled: bool,
+    batch_autotune_goal_ns: u64,
+    batch_tuner: BatchAutoTuner,
+    profiler: ?Profiler,
+    last_profiler_summary: ?ProfilerSummary,
 
     pub fn init(allocator: std.mem.Allocator, device: *device_mod.Device, options: InitOptions) errors.Error!TextRenderer {
         std.debug.assert(options.frames_in_flight > 0);
@@ -244,6 +418,32 @@ pub const TextRenderer = struct {
         errdefer allocator.free(frame_states);
         std.mem.set(FrameState, frame_states, .{});
 
+        const frame_stats = try allocator.alloc(FrameTelemetry, frame_count);
+        errdefer allocator.free(frame_stats);
+        std.mem.set(FrameTelemetry, frame_stats, .{});
+
+        var batch_target = if (options.batch_target == 0) @as(usize, 1) else options.batch_target;
+        if (batch_target > instances_per_frame) batch_target = instances_per_frame;
+
+        var batch_min = if (options.batch_min == 0) @as(usize, 1) else options.batch_min;
+        if (batch_min > batch_target) batch_min = batch_target;
+
+        var transfer_context: ?TransferContext = null;
+        if (options.transfer_queue) |transfer_opts| {
+            var timeline_sem = try sync.Semaphore.create(device, .{
+                .kind = .timeline,
+                .initial_value = transfer_opts.initial_timeline_value,
+            });
+            errdefer timeline_sem.destroy();
+
+            transfer_context = TransferContext{
+                .base_submission = .{ .pool = transfer_opts.pool, .queue = transfer_opts.queue },
+                .timeline = timeline_sem,
+                .wait_stage_mask = transfer_opts.wait_stage_mask,
+                .next_signal_value = transfer_opts.initial_timeline_value,
+            };
+        }
+
         if (glyph_atlas_obj.managedImage().view == null) return errors.Error.FeatureNotPresent;
         if (text_sampler.handle == null) return errors.Error.FeatureNotPresent;
 
@@ -272,6 +472,22 @@ pub const TextRenderer = struct {
             .active_frame = null,
             .command_buffers_dirty = true,
             .projection = identityMatrix(),
+            .frame_stats = frame_stats,
+            .stats_callback = options.stats_callback,
+            .stats_context = options.stats_context,
+            .batch_target = batch_target,
+            .batch_min = batch_min,
+            .batch_limit = batch_target,
+            .transfer_context = transfer_context,
+            .batch_autotune_enabled = options.batch_autotune,
+            .batch_autotune_goal_ns = if (options.batch_autotune_goal_ns == 0) 1_000_000 else options.batch_autotune_goal_ns,
+            .batch_tuner = .{},
+            .profiler = if (options.profiler) |p| Profiler{
+                .log_interval = if (p.log_interval == 0) 120 else p.log_interval,
+                .log_callback = p.log_callback,
+                .log_context = p.log_context,
+            } else null,
+            .last_profiler_summary = null,
         };
     }
 
@@ -285,6 +501,7 @@ pub const TextRenderer = struct {
         self.active_frame = frame_index;
         self.frame_states[idx] = .{};
         self.command_buffers_dirty = true;
+        self.frame_stats[idx] = .{ .frame_index = frame_index, .batch_limit = self.batch_limit };
     }
 
     pub fn setProjection(self: *TextRenderer, matrix: []const f32) RenderError!void {
@@ -323,9 +540,24 @@ pub const TextRenderer = struct {
         const requires_recording = self.command_buffers_dirty or state.needs_upload;
         if (!requires_recording) return;
 
+        const encode_start = std.time.nanoTimestamp();
+
         if (state.instance_count == 0) {
             self.command_buffers_dirty = false;
             state.needs_upload = false;
+            state.draw_count = 0;
+            state.atlas_uploads = 0;
+            state.used_transfer_queue = false;
+            self.recordTelemetry(idx, FrameTelemetry{
+                .frame_index = frame_index,
+                .glyph_count = 0,
+                .draw_count = 0,
+                .atlas_uploads = 0,
+                .batch_limit = self.batch_limit,
+                .encode_cpu_ns = 0,
+                .transfer_cpu_ns = 0,
+                .used_transfer_queue = false,
+            });
             return;
         }
 
@@ -335,6 +567,35 @@ pub const TextRenderer = struct {
             const bytes = std.mem.sliceAsBytes(slice);
             try self.instance_buffer.write(bytes, self.instanceBufferOffset(frame_index));
             state.needs_upload = false;
+        }
+
+        var atlas_uploads: usize = 0;
+        var transfer_submit_ns: u64 = 0;
+        state.sync_wait = null;
+        state.used_transfer_queue = false;
+
+        if (self.transfer_context) |*transfer| {
+            var submission = transfer.base_submission;
+            const timeline_handle = transfer.timeline.handle orelse return errors.Error.FeatureNotPresent;
+            const signal_value = transfer.next_signal_value + 1;
+            submission.signal_timeline = .{ .semaphore = timeline_handle, .value = signal_value };
+
+            const transfer_start = std.time.nanoTimestamp();
+            const uploads = try self.glyph_atlas.flushUploadsTransfer(submission);
+            transfer_submit_ns = @as(u64, @intCast(std.time.nanoTimestamp() - transfer_start));
+
+            if (uploads > 0) {
+                transfer.next_signal_value = signal_value;
+                atlas_uploads = uploads;
+                state.sync_wait = .{
+                    .semaphore = timeline_handle,
+                    .value = signal_value,
+                    .stage_mask = transfer.wait_stage_mask,
+                };
+                state.used_transfer_queue = true;
+            } else {
+                transfer_submit_ns = 0;
+            }
         }
 
         const atlas_image = self.glyph_atlas.managedImage();
@@ -354,7 +615,9 @@ pub const TextRenderer = struct {
 
         try commands.beginRecording(self.device, cmd, .reusable, null);
 
-        _ = try self.glyph_atlas.flushUploads(cmd);
+        if (self.transfer_context == null) {
+            atlas_uploads += try self.glyph_atlas.flushUploads(cmd);
+        }
 
         const viewport = types.VkViewport{
             .x = 0,
@@ -388,19 +651,167 @@ pub const TextRenderer = struct {
             @ptrCast(projection_bytes.ptr),
         );
         self.device.dispatch.cmd_bind_vertex_buffers(cmd, 0, @intCast(vertex_buffers.len), vertex_buffers[0..].ptr, offsets[0..].ptr);
-        self.device.dispatch.cmd_draw(cmd, 4, @intCast(state.instance_count), 0, 0);
+
+        const used_batch_limit = self.batch_limit;
+        var remaining = state.instance_count;
+        var first_instance: u32 = 0;
+        var draw_calls: usize = 0;
+        while (remaining > 0) {
+            const current_batch = @min(used_batch_limit, remaining);
+            self.device.dispatch.cmd_draw(cmd, 4, @intCast(current_batch), 0, first_instance);
+            remaining -= current_batch;
+            first_instance += @as(u32, @intCast(current_batch));
+            draw_calls += 1;
+        }
 
         try commands.endCommandBuffer(self.device, cmd);
 
         self.command_buffers_dirty = false;
+
+        const encode_ns = @as(u64, @intCast(std.time.nanoTimestamp() - encode_start));
+
+        state.draw_count = draw_calls;
+        state.atlas_uploads = atlas_uploads;
+
+        const telemetry = FrameTelemetry{
+            .frame_index = frame_index,
+            .glyph_count = state.instance_count,
+            .draw_count = draw_calls,
+            .atlas_uploads = atlas_uploads,
+            .batch_limit = used_batch_limit,
+            .encode_cpu_ns = encode_ns,
+            .transfer_cpu_ns = transfer_submit_ns,
+            .used_transfer_queue = state.used_transfer_queue,
+        };
+
+        self.recordTelemetry(idx, telemetry);
+        self.updateAutoBatching(telemetry);
+
+        self.adjustBatchLimit(state.instance_count);
     }
 
     pub fn endFrame(self: *TextRenderer) void {
         self.active_frame = null;
     }
 
+    fn recordTelemetry(self: *TextRenderer, idx: usize, stats: FrameTelemetry) void {
+        if (idx < self.frame_stats.len) {
+            self.frame_stats[idx] = stats;
+        }
+        if (self.stats_callback) |cb| {
+            cb(self.stats_context, stats);
+        }
+        if (self.profiler) |*prof| {
+            if (prof.record(stats)) |summary| {
+                self.last_profiler_summary = summary;
+                if (prof.log_callback) |cb| {
+                    cb(prof.log_context, summary);
+                } else {
+                    defaultProfilerLog(summary);
+                }
+            }
+        }
+    }
+
+    fn adjustBatchLimit(self: *TextRenderer, glyphs: usize) void {
+        if (glyphs == 0) return;
+
+        var target = self.batch_target;
+        if (target == 0) target = 1;
+
+        var min_batch = self.batch_min;
+        if (min_batch == 0) min_batch = 1;
+
+        var desired_draws = (glyphs + target - 1) / target;
+        if (desired_draws == 0) desired_draws = 1;
+
+        var recommended = (glyphs + desired_draws - 1) / desired_draws;
+        if (recommended < min_batch) recommended = min_batch;
+        if (recommended > self.instances_per_frame) recommended = self.instances_per_frame;
+
+        self.batch_limit = recommended;
+    }
+
+    fn updateAutoBatching(self: *TextRenderer, stats: FrameTelemetry) void {
+        if (!self.batch_autotune_enabled) return;
+        if (stats.glyph_count == 0) return;
+
+        var tuner = &self.batch_tuner;
+        const smoothing: f64 = 0.2;
+
+        const glyphs = @as(f64, @floatFromInt(stats.glyph_count));
+        const draws = if (stats.draw_count == 0) 1.0 else @as(f64, @floatFromInt(stats.draw_count));
+        const encode_ns = @as(f64, @floatFromInt(stats.encode_cpu_ns));
+        const transfer_ns = @as(f64, @floatFromInt(stats.transfer_cpu_ns));
+
+        tuner.ema_glyphs = smoothEma(tuner.ema_glyphs, glyphs, smoothing);
+        tuner.ema_draws = smoothEma(tuner.ema_draws, draws, smoothing);
+        tuner.ema_encode_ns = smoothEma(tuner.ema_encode_ns, encode_ns, smoothing);
+        tuner.ema_transfer_ns = smoothEma(tuner.ema_transfer_ns, transfer_ns, smoothing);
+        tuner.frames += 1;
+
+        if (tuner.cooldown > 0) {
+            tuner.cooldown -= 1;
+        }
+
+        const avg_draws = if (tuner.ema_draws == 0) draws else tuner.ema_draws;
+        const avg_glyphs = if (tuner.ema_glyphs == 0) glyphs else tuner.ema_glyphs;
+        const avg_encode_ns = if (tuner.ema_encode_ns == 0) encode_ns else tuner.ema_encode_ns;
+        const glyphs_per_draw = if (avg_draws > 0.01) avg_glyphs / avg_draws else avg_glyphs;
+
+        var changed = false;
+        const goal_ns = @as(f64, @floatFromInt(self.batch_autotune_goal_ns));
+
+        if (avg_draws > 1.05 or avg_encode_ns > goal_ns) {
+            var needed_for_single_draw = @as(usize, @intFromFloat(std.math.ceil(avg_glyphs)));
+            if (needed_for_single_draw < self.batch_min) needed_for_single_draw = self.batch_min;
+            if (needed_for_single_draw > self.instances_per_frame) needed_for_single_draw = self.instances_per_frame;
+
+            var stepped_up = self.batch_target + (self.batch_target / 2);
+            if (stepped_up < needed_for_single_draw) stepped_up = needed_for_single_draw;
+            if (stepped_up > self.instances_per_frame) stepped_up = self.instances_per_frame;
+            if (stepped_up > self.batch_target) {
+                self.batch_target = stepped_up;
+                changed = true;
+            }
+        } else if (tuner.cooldown == 0 and self.batch_target > self.batch_min) {
+            const under_utilized = glyphs_per_draw < @as(f64, @floatFromInt(self.batch_target)) * 0.55;
+            const encode_cheap = avg_encode_ns < goal_ns * 0.5;
+            if (under_utilized and encode_cheap) {
+                const reduced = std.math.max(self.batch_min, self.batch_target / 2);
+                if (reduced < self.batch_target) {
+                    self.batch_target = reduced;
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed) {
+            tuner.cooldown = std.math.min(16, @intCast(4 + tuner.frames / 4));
+        }
+
+        if (self.batch_target < self.batch_min) self.batch_target = self.batch_min;
+        if (self.batch_target > self.instances_per_frame) self.batch_target = self.instances_per_frame;
+    }
+
     pub fn releaseAtlasUploads(self: *TextRenderer) void {
         self.glyph_atlas.releaseUploads();
+    }
+
+    pub fn frameStats(self: *const TextRenderer, frame_index: u32) RenderError!FrameTelemetry {
+        if (frame_index >= self.frames_in_flight) return error.InvalidFrameIndex;
+        const idx: usize = @intCast(frame_index);
+        return self.frame_stats[idx];
+    }
+
+    pub fn frameSyncInfo(self: *const TextRenderer, frame_index: u32) RenderError!?FrameSyncInfo {
+        if (frame_index >= self.frames_in_flight) return error.InvalidFrameIndex;
+        const idx: usize = @intCast(frame_index);
+        return self.frame_states[idx].sync_wait;
+    }
+
+    pub fn profilerSummary(self: *const TextRenderer) ?ProfilerSummary {
+        return self.last_profiler_summary;
     }
 
     pub fn quadFromGlyph(info: glyph_atlas.GlyphInfo, origin: [2]f32, color: [4]f32) TextQuad {
@@ -430,6 +841,11 @@ pub const TextRenderer = struct {
     }
 
     pub fn deinit(self: *TextRenderer) void {
+        if (self.transfer_context) |*transfer| {
+            transfer.timeline.destroy();
+            self.transfer_context = null;
+        }
+
         if (self.instance_data.len > 0) {
             self.allocator.free(self.instance_data);
             self.instance_data = &.{};
@@ -438,6 +854,11 @@ pub const TextRenderer = struct {
         if (self.frame_states.len > 0) {
             self.allocator.free(self.frame_states);
             self.frame_states = &.{};
+        }
+
+        if (self.frame_stats.len > 0) {
+            self.allocator.free(self.frame_stats);
+            self.frame_stats = &.{};
         }
 
         self.active_frame = null;
@@ -506,6 +927,7 @@ const TestCapture = struct {
     pub var image_create_calls: usize = 0;
     pub var image_view_create_calls: usize = 0;
     pub var buffer_create_calls: usize = 0;
+    pub var framebuffer_create_calls: usize = 0;
     pub var update_descriptor_calls: usize = 0;
     pub var free_descriptor_calls: usize = 0;
     pub var destroy_pool_calls: usize = 0;
@@ -517,6 +939,7 @@ const TestCapture = struct {
     pub var destroy_image_calls: usize = 0;
     pub var destroy_image_view_calls: usize = 0;
     pub var destroy_buffer_calls: usize = 0;
+    pub var destroy_framebuffer_calls: usize = 0;
     pub var descriptor_write_count: usize = 0;
     pub var last_buffer_size: types.VkDeviceSize = 0;
     pub var last_image_extent: types.VkExtent3D = .{ .width = 0, .height = 0, .depth = 0 };
@@ -526,6 +949,13 @@ const TestCapture = struct {
     pub var draw_calls: usize = 0;
     pub var set_viewport_calls: usize = 0;
     pub var set_scissor_calls: usize = 0;
+    pub var begin_render_pass_calls: usize = 0;
+    pub var end_render_pass_calls: usize = 0;
+    pub var last_clear_value_count: u32 = 0;
+    pub var last_render_area: ?types.VkRect2D = null;
+    pub var last_subpass_contents: types.VkSubpassContents = types.VK_SUBPASS_CONTENTS_INLINE;
+    pub var last_render_pass: ?types.VkRenderPass = null;
+    pub var last_framebuffer: ?types.VkFramebuffer = null;
     pub var begin_command_calls: usize = 0;
     pub var end_command_calls: usize = 0;
     pub var push_constant_calls: usize = 0;
@@ -552,6 +982,7 @@ const TestCapture = struct {
         image_create_calls = 0;
         image_view_create_calls = 0;
         buffer_create_calls = 0;
+        framebuffer_create_calls = 0;
         update_descriptor_calls = 0;
         free_descriptor_calls = 0;
         destroy_pool_calls = 0;
@@ -563,6 +994,7 @@ const TestCapture = struct {
         destroy_image_calls = 0;
         destroy_image_view_calls = 0;
         destroy_buffer_calls = 0;
+        destroy_framebuffer_calls = 0;
         descriptor_write_count = 0;
         last_buffer_size = 0;
         last_image_extent = .{ .width = 0, .height = 0, .depth = 0 };
@@ -573,6 +1005,13 @@ const TestCapture = struct {
         draw_calls = 0;
         set_viewport_calls = 0;
         set_scissor_calls = 0;
+        begin_render_pass_calls = 0;
+        end_render_pass_calls = 0;
+        last_clear_value_count = 0;
+        last_render_area = null;
+        last_subpass_contents = types.VK_SUBPASS_CONTENTS_INLINE;
+        last_render_pass = null;
+        last_framebuffer = null;
         begin_command_calls = 0;
         end_command_calls = 0;
         push_constant_calls = 0;
@@ -726,6 +1165,16 @@ fn stubDestroyImageView(_: types.VkDevice, _: types.VkImageView, _: ?*const type
     TestCapture.destroy_image_view_calls += 1;
 }
 
+fn stubCreateFramebuffer(_: types.VkDevice, _: *const types.VkFramebufferCreateInfo, _: ?*const types.VkAllocationCallbacks, framebuffer: *types.VkFramebuffer) callconv(.C) types.VkResult {
+    TestCapture.framebuffer_create_calls += 1;
+    framebuffer.* = makeHandle(types.VkFramebuffer);
+    return .SUCCESS;
+}
+
+fn stubDestroyFramebuffer(_: types.VkDevice, _: types.VkFramebuffer, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+    TestCapture.destroy_framebuffer_calls += 1;
+}
+
 fn stubCreateBuffer(_: types.VkDevice, info: *const types.VkBufferCreateInfo, _: ?*const types.VkAllocationCallbacks, buffer_handle: *types.VkBuffer) callconv(.C) types.VkResult {
     TestCapture.buffer_create_calls += 1;
     TestCapture.last_buffer_size = info.size;
@@ -809,6 +1258,19 @@ fn stubCmdSetScissor(_: types.VkCommandBuffer, first_scissor: u32, scissor_count
     TestCapture.last_scissor = scissors[0];
 }
 
+fn stubCmdBeginRenderPass(_: types.VkCommandBuffer, info: *const types.VkRenderPassBeginInfo, contents: types.VkSubpassContents) callconv(.C) void {
+    TestCapture.begin_render_pass_calls += 1;
+    TestCapture.last_clear_value_count = info.clearValueCount;
+    TestCapture.last_render_area = info.renderArea;
+    TestCapture.last_subpass_contents = contents;
+    TestCapture.last_render_pass = info.renderPass;
+    TestCapture.last_framebuffer = info.framebuffer;
+}
+
+fn stubCmdEndRenderPass(_: types.VkCommandBuffer) callconv(.C) void {
+    TestCapture.end_render_pass_calls += 1;
+}
+
 fn stubCmdPushConstants(_: types.VkCommandBuffer, _: types.VkPipelineLayout, stage_flags: types.VkShaderStageFlags, offset: u32, size: u32, _: ?*const anyopaque) callconv(.C) void {
     TestCapture.push_constant_calls += 1;
     TestCapture.last_push_size = size;
@@ -851,6 +1313,8 @@ fn setupTestDispatch(device: *device_mod.Device) void {
     device.dispatch.bind_image_memory = stubBindImageMemory;
     device.dispatch.create_image_view = stubCreateImageView;
     device.dispatch.destroy_image_view = stubDestroyImageView;
+    device.dispatch.create_framebuffer = stubCreateFramebuffer;
+    device.dispatch.destroy_framebuffer = stubDestroyFramebuffer;
     device.dispatch.create_buffer = stubCreateBuffer;
     device.dispatch.destroy_buffer = stubDestroyBuffer;
     device.dispatch.get_buffer_memory_requirements = stubGetBufferMemoryRequirements;
@@ -866,6 +1330,8 @@ fn setupTestDispatch(device: *device_mod.Device) void {
     device.dispatch.cmd_draw = stubCmdDraw;
     device.dispatch.cmd_set_viewport = stubCmdSetViewport;
     device.dispatch.cmd_set_scissor = stubCmdSetScissor;
+    device.dispatch.cmd_begin_render_pass = stubCmdBeginRenderPass;
+    device.dispatch.cmd_end_render_pass = stubCmdEndRenderPass;
     device.dispatch.begin_command_buffer = stubBeginCommandBuffer;
     device.dispatch.end_command_buffer = stubEndCommandBuffer;
 }
@@ -1000,6 +1466,20 @@ test "TextRenderer.queueQuads batches glyph data" {
     try std.testing.expectEqual(@as(usize, 0), stats.hits);
     try std.testing.expectEqual(@as(f32, 0.0), stats.hit_rate);
 
+    try std.testing.expectEqual(@as(usize, 0), TestCapture.begin_render_pass_calls);
+    try std.testing.expectEqual(@as(usize, 0), TestCapture.end_render_pass_calls);
+
+    const telemetry = try renderer.frameStats(0);
+    try std.testing.expectEqual(@as(u32, 0), telemetry.frame_index);
+    try std.testing.expectEqual(@as(usize, quads.len), telemetry.glyph_count);
+    try std.testing.expectEqual(@as(usize, 1), telemetry.draw_count);
+    try std.testing.expectEqual(@as(usize, 0), telemetry.atlas_uploads);
+    try std.testing.expect(!telemetry.used_transfer_queue);
+
+    const sync_info = try renderer.frameSyncInfo(0);
+    try std.testing.expect(sync_info == null);
+    try std.testing.expectEqual(@as(usize, 1), renderer.frame_states[0].draw_count);
+
     try std.testing.expect(!renderer.command_buffers_dirty);
 }
 
@@ -1093,5 +1573,162 @@ test "TextRenderer.beginFrame queues quads and encodes draw call" {
     try std.testing.expectEqual(@as(u32, 640), scissor.extent.width);
     try std.testing.expectEqual(@as(u32, 480), scissor.extent.height);
 
+    try std.testing.expectEqual(@as(usize, 0), TestCapture.begin_render_pass_calls);
+    try std.testing.expectEqual(@as(usize, 0), TestCapture.end_render_pass_calls);
+
+    const telemetry = try renderer.frameStats(0);
+    try std.testing.expectEqual(@as(u32, 0), telemetry.frame_index);
+    try std.testing.expectEqual(@as(usize, 1), telemetry.glyph_count);
+    try std.testing.expectEqual(@as(usize, 1), telemetry.draw_count);
+    try std.testing.expectEqual(@as(usize, 0), telemetry.atlas_uploads);
+    try std.testing.expect(!telemetry.used_transfer_queue);
+
+    const sync_info = try renderer.frameSyncInfo(0);
+    try std.testing.expect(sync_info == null);
+    try std.testing.expectEqual(@as(usize, 1), renderer.frame_states[0].draw_count);
+
     try std.testing.expect(!renderer.command_buffers_dirty);
+}
+
+test "TextRenderer adjusts batch limit based on glyph load" {
+    const fake_device_handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x3500)));
+
+    var device = device_mod.Device{
+        .allocator = std.testing.allocator,
+        .loader = undefined,
+        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .handle = fake_device_handle,
+        .allocation_callbacks = null,
+    };
+
+    setupTestDispatch(&device);
+    TestCapture.reset();
+
+    var memory_props = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    memory_props.memoryTypeCount = 2;
+    memory_props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
+    memory_props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
+    memory_props.memoryHeapCount = 2;
+    memory_props.memoryHeaps[0] = .{ .size = 1024 * 1024 * 1024, .flags = types.VK_MEMORY_HEAP_DEVICE_LOCAL_BIT };
+    memory_props.memoryHeaps[1] = .{ .size = 512 * 1024 * 1024, .flags = 0 };
+
+    const count: usize = 900;
+
+    var renderer = try TextRenderer.init(std.testing.allocator, &device, .{
+        .extent = .{ .width = 800, .height = 600 },
+        .surface_format = .B8G8R8A8_SRGB,
+        .memory_props = memory_props,
+        .frames_in_flight = 2,
+        .max_instances = 1024,
+        .atlas_extent = .{ .width = 256, .height = 256 },
+        .atlas_format = .R8_UNORM,
+        .batch_target = 512,
+        .batch_min = 128,
+    });
+    defer renderer.deinit();
+
+    try renderer.beginFrame(0);
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const quads = try alloc.alloc(TextQuad, count);
+    for (quads, 0..) |*quad, i| {
+        const offset = @as(f32, @floatFromInt(i));
+        quad.* = TextQuad{
+            .position = .{ offset, offset },
+            .size = .{ 8.0, 16.0 },
+            .atlas_rect = .{ 0.0, 0.0, 0.25, 0.25 },
+            .color = .{ 1.0, 1.0, 1.0, 1.0 },
+        };
+    }
+
+    try renderer.queueQuads(quads);
+
+    const command_buffer = @as(types.VkCommandBuffer, @ptrFromInt(@as(usize, 0x3600)));
+    try renderer.encode(command_buffer);
+    renderer.endFrame();
+
+    const telemetry = try renderer.frameStats(0);
+    try std.testing.expectEqual(@as(usize, count), telemetry.glyph_count);
+    try std.testing.expectEqual(@as(usize, 2), telemetry.draw_count);
+    try std.testing.expectEqual(@as(usize, 512), telemetry.batch_limit);
+
+    try std.testing.expectEqual(@as(usize, 2), renderer.frame_states[0].draw_count);
+    try std.testing.expectEqual(@as(usize, 900), renderer.batch_limit);
+    try std.testing.expectEqual(@as(usize, 900), renderer.batch_target);
+}
+
+test "TextRenderer profiler aggregates frame telemetry" {
+    const fake_device_handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x3700)));
+
+    var device = device_mod.Device{
+        .allocator = std.testing.allocator,
+        .loader = undefined,
+        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .handle = fake_device_handle,
+        .allocation_callbacks = null,
+    };
+
+    setupTestDispatch(&device);
+    TestCapture.reset();
+
+    var memory_props = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    memory_props.memoryTypeCount = 2;
+    memory_props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
+    memory_props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
+    memory_props.memoryHeapCount = 2;
+    memory_props.memoryHeaps[0] = .{ .size = 1024 * 1024 * 1024, .flags = types.VK_MEMORY_HEAP_DEVICE_LOCAL_BIT };
+    memory_props.memoryHeaps[1] = .{ .size = 512 * 1024 * 1024, .flags = 0 };
+
+    const Capture = struct {
+        pub var call_count: usize = 0;
+        pub var last_summary: ?ProfilerSummary = null;
+
+        pub fn reset() void {
+            call_count = 0;
+            last_summary = null;
+        }
+
+        pub fn log(_: ?*anyopaque, summary: ProfilerSummary) void {
+            call_count += 1;
+            last_summary = summary;
+        }
+    };
+
+    Capture.reset();
+
+    var renderer = try TextRenderer.init(std.testing.allocator, &device, .{
+        .extent = .{ .width = 640, .height = 480 },
+        .surface_format = .B8G8R8A8_SRGB,
+        .memory_props = memory_props,
+        .frames_in_flight = 2,
+        .max_instances = 32,
+        .atlas_extent = .{ .width = 128, .height = 128 },
+        .atlas_format = .R8_UNORM,
+        .profiler = .{ .log_interval = 2, .log_callback = Capture.log, .log_context = null },
+    });
+    defer renderer.deinit();
+
+    const quads = [_]TextQuad{
+        .{ .position = .{ 0.0, 0.0 }, .size = .{ 8.0, 16.0 }, .atlas_rect = .{ 0.0, 0.0, 0.25, 0.25 }, .color = .{ 1.0, 1.0, 1.0, 1.0 } },
+        .{ .position = .{ 12.0, 24.0 }, .size = .{ 8.0, 16.0 }, .atlas_rect = .{ 0.25, 0.25, 0.25, 0.25 }, .color = .{ 1.0, 0.8, 0.3, 1.0 } },
+    };
+
+    for (0..2) |frame_index| {
+        try renderer.beginFrame(@intCast(frame_index));
+        try renderer.queueQuads(quads[0..]);
+        const command_buffer = @as(types.VkCommandBuffer, @ptrFromInt(@as(usize, 0x3800 + frame_index)));
+        try renderer.encode(command_buffer);
+        renderer.endFrame();
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), Capture.call_count);
+    const summary = renderer.profilerSummary() orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 2), summary.frames);
+    try std.testing.expect(summary.avg_glyphs >= 2.0);
+    try std.testing.expect(summary.avg_draws >= 1.0);
+    try std.testing.expect(summary.max_draws >= 1);
+    try std.testing.expectEqual(summary.avg_transfer_ns, 0.0);
 }

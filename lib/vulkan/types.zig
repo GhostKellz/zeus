@@ -680,6 +680,11 @@ pub const PFN_vkCmdPushConstants = *const fn (VkCommandBuffer, VkPipelineLayout,
 pub const PFN_vkCmdSetViewport = *const fn (VkCommandBuffer, u32, u32, *const VkViewport) callconv(.C) void;
 pub const PFN_vkCmdSetScissor = *const fn (VkCommandBuffer, u32, u32, *const VkRect2D) callconv(.C) void;
 pub const PFN_vkCmdDraw = *const fn (VkCommandBuffer, u32, u32, u32, u32) callconv(.C) void;
+pub const PFN_vkCmdBeginRenderPass = *const fn (VkCommandBuffer, *const VkRenderPassBeginInfo, VkSubpassContents) callconv(.C) void;
+pub const PFN_vkCmdEndRenderPass = *const fn (VkCommandBuffer) callconv(.C) void;
+pub const PFN_vkCmdCopyImageToBuffer = *const fn (VkCommandBuffer, VkImage, VkImageLayout, VkBuffer, u32, *const VkBufferImageCopy) callconv(.C) void;
+pub const PFN_vkCreateFramebuffer = *const fn (VkDevice, *const VkFramebufferCreateInfo, ?*const VkAllocationCallbacks, *VkFramebuffer) callconv(.C) VkResult;
+pub const PFN_vkDestroyFramebuffer = *const fn (VkDevice, VkFramebuffer, ?*const VkAllocationCallbacks) callconv(.C) void;
 pub const PFN_vkCreateCommandPool = *const fn (VkDevice, *const VkCommandPoolCreateInfo, ?*const VkAllocationCallbacks, *VkCommandPool) callconv(.C) VkResult;
 pub const PFN_vkDestroyCommandPool = *const fn (VkDevice, VkCommandPool, ?*const VkAllocationCallbacks) callconv(.C) void;
 pub const PFN_vkResetCommandPool = *const fn (VkDevice, VkCommandPool, VkCommandPoolResetFlags) callconv(.C) VkResult;
@@ -711,6 +716,15 @@ pub const VkSubmitInfo = extern struct {
     pCommandBuffers: ?[*]const VkCommandBuffer = null,
     signalSemaphoreCount: u32 = 0,
     pSignalSemaphores: ?[*]const VkSemaphore = null,
+};
+
+pub const VkTimelineSemaphoreSubmitInfo = extern struct {
+    sType: VkStructureType = .TIMELINE_SEMAPHORE_SUBMIT_INFO,
+    pNext: ?*const anyopaque = null,
+    waitSemaphoreValueCount: u32 = 0,
+    pWaitSemaphoreValues: ?[*]const u64 = null,
+    signalSemaphoreValueCount: u32 = 0,
+    pSignalSemaphoreValues: ?[*]const u64 = null,
 };
 
 pub const VkSemaphore = *opaque {};
@@ -956,6 +970,124 @@ pub const VkImageLayout = enum(u32) {
     PREINITIALIZED = 8,
     PRESENT_SRC_KHR = 1000001002,
     _,
+};
+
+pub const VkAttachmentLoadOp = enum(u32) {
+    LOAD = 0,
+    CLEAR = 1,
+    DONT_CARE = 2,
+};
+
+pub const VkAttachmentStoreOp = enum(u32) {
+    STORE = 0,
+    DONT_CARE = 1,
+    _,
+};
+
+pub const VkAttachmentDescriptionFlags = VkFlags;
+
+pub const VkAttachmentDescription = extern struct {
+    flags: VkAttachmentDescriptionFlags = 0,
+    format: VkFormat,
+    samples: VkSampleCountFlagBits,
+    loadOp: VkAttachmentLoadOp,
+    storeOp: VkAttachmentStoreOp,
+    stencilLoadOp: VkAttachmentLoadOp,
+    stencilStoreOp: VkAttachmentStoreOp,
+    initialLayout: VkImageLayout,
+    finalLayout: VkImageLayout,
+};
+
+pub const VkAttachmentReference = extern struct {
+    attachment: u32,
+    layout: VkImageLayout,
+};
+
+pub const VkSubpassDescriptionFlags = VkFlags;
+
+pub const VkSubpassDescription = extern struct {
+    flags: VkSubpassDescriptionFlags = 0,
+    pipelineBindPoint: VkPipelineBindPoint,
+    inputAttachmentCount: u32 = 0,
+    pInputAttachments: ?[*]const VkAttachmentReference = null,
+    colorAttachmentCount: u32,
+    pColorAttachments: ?[*]const VkAttachmentReference,
+    pResolveAttachments: ?[*]const VkAttachmentReference = null,
+    pDepthStencilAttachment: ?*const VkAttachmentReference = null,
+    preserveAttachmentCount: u32 = 0,
+    pPreserveAttachments: ?[*]const u32 = null,
+};
+
+pub const VkSubpassDependency = extern struct {
+    srcSubpass: u32,
+    dstSubpass: u32,
+    srcStageMask: VkPipelineStageFlags,
+    dstStageMask: VkPipelineStageFlags,
+    srcAccessMask: VkAccessFlags,
+    dstAccessMask: VkAccessFlags,
+    dependencyFlags: VkDependencyFlags = 0,
+};
+
+pub const VkRenderPassCreateFlags = VkFlags;
+
+pub const VkRenderPassCreateInfo = extern struct {
+    sType: VkStructureType = .RENDER_PASS_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkRenderPassCreateFlags = 0,
+    attachmentCount: u32,
+    pAttachments: ?[*]const VkAttachmentDescription,
+    subpassCount: u32,
+    pSubpasses: [*]const VkSubpassDescription,
+    dependencyCount: u32 = 0,
+    pDependencies: ?[*]const VkSubpassDependency = null,
+};
+
+pub const VkSubpassContents = enum(u32) {
+    INLINE = 0,
+    SECONDARY_COMMAND_BUFFERS = 1,
+};
+
+pub const VK_SUBPASS_CONTENTS_INLINE: VkSubpassContents = .INLINE;
+pub const VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: VkSubpassContents = .SECONDARY_COMMAND_BUFFERS;
+
+pub const VkClearColorValue = extern union {
+    float32: [4]f32,
+    int32: [4]i32,
+    uint32: [4]u32,
+};
+
+pub const VkClearDepthStencilValue = extern struct {
+    depth: f32,
+    stencil: u32,
+};
+
+pub const VkClearValue = extern union {
+    color: VkClearColorValue,
+    depthStencil: VkClearDepthStencilValue,
+};
+
+pub const VkRenderPassBeginInfo = extern struct {
+    sType: VkStructureType = .RENDER_PASS_BEGIN_INFO,
+    pNext: ?*const anyopaque = null,
+    renderPass: VkRenderPass,
+    framebuffer: VkFramebuffer,
+    renderArea: VkRect2D,
+    clearValueCount: u32 = 0,
+    pClearValues: ?[*]const VkClearValue = null,
+};
+
+pub const VkFramebufferCreateFlags = VkFlags;
+
+pub const VkFramebufferCreateInfo = extern struct {
+    sType: VkStructureType = .FRAMEBUFFER_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFramebufferCreateFlags = 0,
+    renderPass: VkRenderPass,
+    attachmentCount: u32,
+    pAttachments: [*]const VkImageView,
+    width: u32,
+    height: u32,
+    layers: u32,
 };
 
 pub const VkImageAspectFlags = VkFlags;

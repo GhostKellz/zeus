@@ -25,7 +25,7 @@ pub const RenderPassBuilder = struct {
         self.dependencies.deinit();
     }
 
-    pub fn addColorAttachment(self: *RenderPassBuilder, format: types.VkFormat, load_op: types.VkAttachmentLoadOp) !u32 {
+    pub fn addColorAttachment(self: *RenderPassBuilder, format: types.VkFormat, load_op: types.VkAttachmentLoadOp, final_layout: types.VkImageLayout) !u32 {
         const attachment = types.VkAttachmentDescription{
             .format = format,
             .samples = types.VK_SAMPLE_COUNT_1_BIT,
@@ -34,7 +34,7 @@ pub const RenderPassBuilder = struct {
             .stencilLoadOp = types.VkAttachmentLoadOp.DONT_CARE,
             .stencilStoreOp = types.VkAttachmentStoreOp.DONT_CARE,
             .initialLayout = types.VkImageLayout.UNDEFINED,
-            .finalLayout = types.VkImageLayout.PRESENT_SRC_KHR,
+            .finalLayout = final_layout,
         };
         try self.attachments.append(attachment);
 
@@ -141,7 +141,7 @@ test "RenderPassBuilder builds single color attachment" {
     var builder = RenderPassBuilder.init(std.testing.allocator);
     defer builder.deinit();
 
-    try builder.addColorAttachment(.R8G8B8A8_UNORM, types.VkAttachmentLoadOp.CLEAR);
+    try builder.addColorAttachment(.R8G8B8A8_UNORM, types.VkAttachmentLoadOp.CLEAR, types.VkImageLayout.PRESENT_SRC_KHR);
     const render_pass = try builder.build(&device);
     try std.testing.expectEqual(fake_render_pass, render_pass);
 
@@ -159,7 +159,7 @@ test "RenderPass.deinit destroys once" {
     var device = makeDevice();
     var builder = RenderPassBuilder.init(std.testing.allocator);
     defer builder.deinit();
-    try builder.addColorAttachment(.B8G8R8A8_SRGB, types.VkAttachmentLoadOp.CLEAR);
+    try builder.addColorAttachment(.B8G8R8A8_SRGB, types.VkAttachmentLoadOp.CLEAR, types.VkImageLayout.PRESENT_SRC_KHR);
 
     var render_pass = try RenderPass.init(&device, &builder);
     try std.testing.expectEqual(fake_render_pass, render_pass.handle.?);

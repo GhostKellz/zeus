@@ -5,6 +5,7 @@ const device_mod = @import("device.zig");
 const image = @import("image.zig");
 const buffer = @import("buffer.zig");
 const loader = @import("loader.zig");
+const commands = @import("commands.zig");
 
 pub const GlyphKey = struct {
     font_id: u32,
@@ -58,6 +59,24 @@ pub const GrowthCallback = *const fn (?*anyopaque, *GlyphAtlas, types.VkExtent2D
 pub const UploadTarget = struct {
     staging: buffer.ManagedBuffer,
     rect: GlyphRect,
+};
+
+pub const TimelineWait = struct {
+    semaphore: types.VkSemaphore,
+    value: u64,
+    stage_mask: types.VkPipelineStageFlags,
+};
+
+pub const TimelineSignal = struct {
+    semaphore: types.VkSemaphore,
+    value: u64,
+};
+
+pub const TransferSubmission = struct {
+    pool: *commands.CommandPool,
+    queue: types.VkQueue,
+    wait_timeline: ?TimelineWait = null,
+    signal_timeline: ?TimelineSignal = null,
 };
 
 const default_padding: u32 = 1;
@@ -297,15 +316,89 @@ pub const GlyphAtlas = struct {
         _ = self.shelves.append(.{ .y = 0, .height = 0, .cursor_x = 0 }) catch unreachable;
     }
 
-    pub fn flushUploads(self: *GlyphAtlas, cmd: types.VkCommandBuffer) errors.Error!bool {
-        if (self.pending_uploads.items.len == 0) return false;
+    pub fn flushUploads(self: *GlyphAtlas, cmd: types.VkCommandBuffer) errors.Error!usize {
+        return self.recordUploads(cmd);
+    }
+
+    pub fn flushUploadsTransfer(self: *GlyphAtlas, submission: TransferSubmission) errors.Error!usize {
+        if (self.pending_uploads.items.len == 0) return 0;
+
+        const command = try submission.pool.allocateOne(.PRIMARY);
+        defer submission.pool.free(&.{command});
+
+        try commands.beginRecording(self.device, command, .one_time, null);
+        const count = try self.recordUploads(command);
+        try commands.endCommandBuffer(self.device, command);
+
+        var command_handles = [_]types.VkCommandBuffer{command};
+        var submit = types.VkSubmitInfo{
+            .commandBufferCount = 1,
+            .pCommandBuffers = @as([*]const types.VkCommandBuffer, command_handles[0..].ptr),
+        };
+
+        var wait_semaphores: [1]types.VkSemaphore = undefined;
+        var wait_stages: [1]types.VkPipelineStageFlags = undefined;
+        var wait_values: [1]u64 = undefined;
+        var signal_semaphores: [1]types.VkSemaphore = undefined;
+        var signal_values: [1]u64 = undefined;
+        var timeline_info: types.VkTimelineSemaphoreSubmitInfo = .{};
+        var uses_timeline = false;
+
+        if (submission.wait_timeline) |wait| {
+            wait_semaphores[0] = wait.semaphore;
+            wait_stages[0] = wait.stage_mask;
+            wait_values[0] = wait.value;
+            submit.waitSemaphoreCount = 1;
+            submit.pWaitSemaphores = @as([*]const types.VkSemaphore, wait_semaphores[0..].ptr);
+            submit.pWaitDstStageMask = @as([*]const types.VkPipelineStageFlags, wait_stages[0..].ptr);
+            timeline_info.waitSemaphoreValueCount = 1;
+            timeline_info.pWaitSemaphoreValues = @as([*]const u64, wait_values[0..].ptr);
+            uses_timeline = true;
+        }
+
+        if (submission.signal_timeline) |signal| {
+            signal_semaphores[0] = signal.semaphore;
+            signal_values[0] = signal.value;
+            submit.signalSemaphoreCount = 1;
+            submit.pSignalSemaphores = @as([*]const types.VkSemaphore, signal_semaphores[0..].ptr);
+            timeline_info.signalSemaphoreValueCount = 1;
+            timeline_info.pSignalSemaphoreValues = @as([*]const u64, signal_values[0..].ptr);
+            uses_timeline = true;
+        }
+
+        if (uses_timeline) {
+            timeline_info.sType = .TIMELINE_SEMAPHORE_SUBMIT_INFO;
+            submit.pNext = &timeline_info;
+        }
+
+        try errors.ensureSuccess(self.device.dispatch.queue_submit(submission.queue, 1, &submit, null));
+
+        return count;
+    }
+
+    fn recordUploads(self: *GlyphAtlas, cmd: types.VkCommandBuffer) errors.Error!usize {
+        const upload_count = self.pending_uploads.items.len;
+        if (upload_count == 0) return 0;
+
+        const previous_layout = self.atlas.current_layout;
+        const pre_stage: types.VkPipelineStageFlags = switch (previous_layout) {
+            .SHADER_READ_ONLY_OPTIMAL => types.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            .TRANSFER_DST_OPTIMAL => types.VK_PIPELINE_STAGE_TRANSFER_BIT,
+            else => types.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        };
+        const pre_access: types.VkAccessFlags = switch (previous_layout) {
+            .SHADER_READ_ONLY_OPTIMAL => types.VK_ACCESS_SHADER_READ_BIT,
+            .TRANSFER_DST_OPTIMAL => types.VK_ACCESS_TRANSFER_WRITE_BIT,
+            else => 0,
+        };
 
         try self.atlas.ensureLayout(cmd, .TRANSFER_DST_OPTIMAL, .{
             .range = null,
-            .src_stage = types.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            .src_stage = pre_stage,
             .dst_stage = types.VK_PIPELINE_STAGE_TRANSFER_BIT,
-            .src_access = types.VK_ACCESS_SHADER_READ_BIT,
+            .src_access = pre_access,
             .dst_access = types.VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dependency_flags = types.VK_DEPENDENCY_BY_REGION_BIT,
         });
 
         for (self.pending_uploads.items) |pending| {
@@ -342,9 +435,10 @@ pub const GlyphAtlas = struct {
             .dst_stage = types.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
             .src_access = types.VK_ACCESS_TRANSFER_WRITE_BIT,
             .dst_access = types.VK_ACCESS_SHADER_READ_BIT,
+            .dependency_flags = types.VK_DEPENDENCY_BY_REGION_BIT,
         });
 
-        return true;
+        return upload_count;
     }
 
     pub fn releaseUploads(self: *GlyphAtlas) void {
@@ -406,7 +500,8 @@ test "GlyphAtlas packs glyphs and enqueues uploads" {
     try std.testing.expectEqual(@as(usize, 1), atlas.pending_uploads.items.len);
 
     const cmd = fake_command_buffer;
-    try atlas.flushUploads(cmd);
+    const uploaded = try atlas.flushUploads(cmd);
+    try std.testing.expectEqual(@as(usize, 1), uploaded);
     try std.testing.expectEqual(@as(usize, 0), atlas.pending_uploads.items.len);
     try std.testing.expectEqual(@as(usize, 1), atlas.in_flight_uploads.items.len);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.copy_calls);
@@ -416,12 +511,92 @@ test "GlyphAtlas packs glyphs and enqueues uploads" {
     try std.testing.expectEqual(@as(usize, 0), atlas.in_flight_uploads.items.len);
 }
 
+test "GlyphAtlas.flushUploadsTransfer uses dedicated queue" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    TestCapture.reset();
+    var device = makeTestDevice(alloc);
+
+    var atlas = try GlyphAtlas.init(alloc, &device, makeMemoryProps(), .{});
+    defer atlas.deinit();
+
+    _ = try atlas.ensure(.{ .font_id = 2, .glyph_id = 99 }, .{
+        .advance = 8.0,
+        .bearing = .{ .x = 0, .y = 0 },
+        .size = .{ .width = 12, .height = 12 },
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), atlas.pending_uploads.items.len);
+
+    var pool = try commands.CommandPool.create(&device, .{ .queue_family_index = 1, .flags = types.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT });
+
+    const submission = TransferSubmission{ .pool = &pool, .queue = fake_queue_handle };
+    const upload_count = try atlas.flushUploadsTransfer(submission);
+    try std.testing.expectEqual(@as(usize, 1), upload_count);
+
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.command_pool_create_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.command_buffer_alloc_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.command_buffer_free_calls);
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.queue_submit_calls);
+    try std.testing.expectEqual(@as(usize, 0), TestCapture.queue_wait_idle_calls);
+    try std.testing.expectEqual(fake_queue_handle, TestCapture.last_queue.?);
+
+    try std.testing.expectEqual(@as(usize, 0), atlas.pending_uploads.items.len);
+
+    atlas.releaseUploads();
+    pool.destroy();
+    try std.testing.expectEqual(@as(usize, 1), TestCapture.command_pool_destroy_calls);
+}
+
+test "GlyphAtlas.flushUploadsTransfer wires timeline semaphores" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    TestCapture.reset();
+    var device = makeTestDevice(alloc);
+
+    var atlas = try GlyphAtlas.init(alloc, &device, makeMemoryProps(), .{});
+    defer atlas.deinit();
+
+    _ = try atlas.ensure(.{ .font_id = 5, .glyph_id = 7 }, .{
+        .advance = 6.0,
+        .bearing = .{ .x = 1, .y = 1 },
+        .size = .{ .width = 8, .height = 8 },
+    });
+
+    var pool = try commands.CommandPool.create(&device, .{ .queue_family_index = 1, .flags = types.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT });
+
+    const submission = TransferSubmission{
+        .pool = &pool,
+        .queue = fake_queue_handle,
+        .wait_timeline = .{ .semaphore = fake_wait_semaphore, .value = 3, .stage_mask = types.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT },
+        .signal_timeline = .{ .semaphore = fake_signal_semaphore, .value = 4 },
+    };
+
+    _ = try atlas.flushUploadsTransfer(submission);
+
+    try std.testing.expectEqual(@as(u32, 1), TestCapture.last_submit_wait_count);
+    try std.testing.expectEqual(@as(u32, 1), TestCapture.last_submit_signal_count);
+    try std.testing.expectEqual(@as(u64, 3), TestCapture.last_timeline_wait_value.?);
+    try std.testing.expectEqual(@as(u64, 4), TestCapture.last_timeline_signal_value.?);
+
+    atlas.releaseUploads();
+    pool.destroy();
+}
+
 const fake_device_handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x1010)));
 const fake_image_handle = @as(types.VkImage, @ptrFromInt(@as(usize, 0x2020)));
 const fake_image_view = @as(types.VkImageView, @ptrFromInt(@as(usize, 0x3030)));
 const fake_buffer_handle = @as(types.VkBuffer, @ptrFromInt(@as(usize, 0x4040)));
 const fake_memory_handle = @as(types.VkDeviceMemory, @ptrFromInt(@as(usize, 0x5050)));
 const fake_command_buffer = @as(types.VkCommandBuffer, @ptrFromInt(@as(usize, 0x6060)));
+const fake_command_pool = @as(types.VkCommandPool, @ptrFromInt(@as(usize, 0x7070)));
+const fake_queue_handle = @as(types.VkQueue, @ptrFromInt(@as(usize, 0x8080)));
+const fake_wait_semaphore = @as(types.VkSemaphore, @ptrFromInt(@as(usize, 0x9090)));
+const fake_signal_semaphore = @as(types.VkSemaphore, @ptrFromInt(@as(usize, 0xA0A0)));
 
 const TestCapture = struct {
     pub var create_image_calls: usize = 0;
@@ -434,6 +609,17 @@ const TestCapture = struct {
     pub var last_copy: ?types.VkBufferImageCopy = null;
     pub var last_barrier: ?types.VkImageMemoryBarrier = null;
     pub var mapped_storage: [4096]u8 = [_]u8{0} ** 4096;
+    pub var command_pool_create_calls: usize = 0;
+    pub var command_pool_destroy_calls: usize = 0;
+    pub var command_buffer_alloc_calls: usize = 0;
+    pub var command_buffer_free_calls: usize = 0;
+    pub var queue_submit_calls: usize = 0;
+    pub var queue_wait_idle_calls: usize = 0;
+    pub var last_queue: ?types.VkQueue = null;
+    pub var last_submit_wait_count: u32 = 0;
+    pub var last_submit_signal_count: u32 = 0;
+    pub var last_timeline_wait_value: ?u64 = null;
+    pub var last_timeline_signal_value: ?u64 = null;
 
     pub fn reset() void {
         create_image_calls = 0;
@@ -446,6 +632,17 @@ const TestCapture = struct {
         last_copy = null;
         last_barrier = null;
         std.mem.set(u8, mapped_storage[0..], 0);
+        command_pool_create_calls = 0;
+        command_pool_destroy_calls = 0;
+        command_buffer_alloc_calls = 0;
+        command_buffer_free_calls = 0;
+        queue_submit_calls = 0;
+        queue_wait_idle_calls = 0;
+        last_queue = null;
+        last_submit_wait_count = 0;
+        last_submit_signal_count = 0;
+        last_timeline_wait_value = null;
+        last_timeline_signal_value = null;
     }
 };
 
@@ -469,6 +666,10 @@ fn makeTestDevice(allocator: std.mem.Allocator) device_mod.Device {
     device.dispatch.destroy_buffer = stubDestroyBuffer;
     device.dispatch.get_buffer_memory_requirements = stubBufferRequirements;
     device.dispatch.bind_buffer_memory = stubBindBufferMemory;
+    device.dispatch.create_command_pool = stubCreateCommandPool;
+    device.dispatch.destroy_command_pool = stubDestroyCommandPool;
+    device.dispatch.allocate_command_buffers = stubAllocateCommandBuffers;
+    device.dispatch.free_command_buffers = stubFreeCommandBuffers;
 
     device.dispatch.allocate_memory = stubAllocateMemory;
     device.dispatch.free_memory = stubFreeMemory;
@@ -479,6 +680,10 @@ fn makeTestDevice(allocator: std.mem.Allocator) device_mod.Device {
 
     device.dispatch.cmd_copy_buffer_to_image = stubCopyBufferToImage;
     device.dispatch.cmd_pipeline_barrier = stubPipelineBarrier;
+    device.dispatch.begin_command_buffer = stubBeginCommandBuffer;
+    device.dispatch.end_command_buffer = stubEndCommandBuffer;
+    device.dispatch.queue_submit = stubQueueSubmit;
+    device.dispatch.queue_wait_idle = stubQueueWaitIdle;
 
     return device;
 }
@@ -532,6 +737,67 @@ fn stubCreateBuffer(_: types.VkDevice, _: *const types.VkBufferCreateInfo, _: ?*
 
 fn stubDestroyBuffer(_: types.VkDevice, _: types.VkBuffer, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
     TestCapture.destroy_buffer_calls += 1;
+}
+
+fn stubCreateCommandPool(_: types.VkDevice, _: *const types.VkCommandPoolCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pool: *types.VkCommandPool) callconv(.C) types.VkResult {
+    TestCapture.command_pool_create_calls += 1;
+    out_pool.* = fake_command_pool;
+    return .SUCCESS;
+}
+
+fn stubDestroyCommandPool(_: types.VkDevice, _: types.VkCommandPool, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+    TestCapture.command_pool_destroy_calls += 1;
+}
+
+fn stubAllocateCommandBuffers(_: types.VkDevice, info: *const types.VkCommandBufferAllocateInfo, buffers: [*]types.VkCommandBuffer) callconv(.C) types.VkResult {
+    TestCapture.command_buffer_alloc_calls += 1;
+    var i: usize = 0;
+    while (i < info.commandBufferCount) : (i += 1) {
+        buffers[i] = fake_command_buffer;
+    }
+    return .SUCCESS;
+}
+
+fn stubFreeCommandBuffers(_: types.VkDevice, _: types.VkCommandPool, count: u32, _: [*]const types.VkCommandBuffer) callconv(.C) void {
+    if (count > 0) TestCapture.command_buffer_free_calls += 1;
+}
+
+fn stubBeginCommandBuffer(_: types.VkCommandBuffer, _: *const types.VkCommandBufferBeginInfo) callconv(.C) types.VkResult {
+    return .SUCCESS;
+}
+
+fn stubEndCommandBuffer(_: types.VkCommandBuffer) callconv(.C) types.VkResult {
+    return .SUCCESS;
+}
+
+fn stubQueueSubmit(queue: types.VkQueue, submit_count: u32, infos: [*]const types.VkSubmitInfo, _: types.VkFence) callconv(.C) types.VkResult {
+    TestCapture.queue_submit_calls += @intCast(submit_count);
+    if (submit_count > 0) {
+        const info = infos[0];
+        std.debug.assert(info.commandBufferCount > 0);
+        TestCapture.last_submit_wait_count = info.waitSemaphoreCount;
+        TestCapture.last_submit_signal_count = info.signalSemaphoreCount;
+        TestCapture.last_timeline_wait_value = null;
+        TestCapture.last_timeline_signal_value = null;
+
+        if (info.pNext) |ptr| {
+            const timeline = @as(*const types.VkTimelineSemaphoreSubmitInfo, @ptrCast(ptr));
+            if (timeline.waitSemaphoreValueCount > 0 and timeline.pWaitSemaphoreValues != null) {
+                TestCapture.last_timeline_wait_value = timeline.pWaitSemaphoreValues.?[0];
+            }
+            if (timeline.signalSemaphoreValueCount > 0 and timeline.pSignalSemaphoreValues != null) {
+                TestCapture.last_timeline_signal_value = timeline.pSignalSemaphoreValues.?[0];
+            }
+        }
+    }
+    TestCapture.last_queue = queue;
+    return .SUCCESS;
+}
+
+fn stubQueueWaitIdle(queue: types.VkQueue) callconv(.C) types.VkResult {
+    TestCapture.queue_wait_idle_calls += 1;
+    TestCapture.last_queue = queue;
+    return .SUCCESS;
 }
 
 fn stubBufferRequirements(_: types.VkDevice, _: types.VkBuffer, reqs: *types.VkMemoryRequirements) callconv(.C) void {
