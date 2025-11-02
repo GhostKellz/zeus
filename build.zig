@@ -7,19 +7,18 @@ const std = @import("std");
 // build runner to parallelize the build automatically (and the cache system to
 // know when a step doesn't need to be re-run).
 pub fn build(b: *std.Build) void {
-    // Standard target options allow the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
-    // It's also possible to define more custom flags to toggle optional features
-    // of this build script using `b.option()`. All defined flags (including
-    // target and optimize options) will be listed when running `zig build --help`
-    // in this directory.
+
+    // ===== MODULAR BUILD OPTIONS =====
+    // Allow consumers to build only what they need
+    const enable_text_rendering = b.option(bool, "text-rendering", "Enable text rendering features (default: true)") orelse true;
+    const enable_validation = b.option(bool, "validation", "Enable system validation features (default: true)") orelse true;
+    const enable_frame_pacing = b.option(bool, "frame-pacing", "Enable frame pacing features (default: true)") orelse true;
+
+    _ = enable_text_rendering;
+    _ = enable_validation;
+    _ = enable_frame_pacing;
 
     // This creates a module, which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
@@ -149,6 +148,31 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+
+    // Add unit tests for new Phase 3 modules
+    const context_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/context_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "vulkan", .module = vulkan_mod },
+            },
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(context_test).step);
+
+    const query_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/query_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "vulkan", .module = vulkan_mod },
+            },
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(query_test).step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //

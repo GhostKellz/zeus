@@ -250,7 +250,7 @@ pub const DeviceDispatch = struct {
     get_refresh_cycle_duration_google: types.PFN_vkGetRefreshCycleDurationGOOGLE,
     get_past_presentation_timing_google: types.PFN_vkGetPastPresentationTimingGOOGLE,
 
-    fn load(device: types.VkDevice, proc: types.PFN_vkGetDeviceProcAddr) !DeviceDispatch {
+    pub fn load(device: types.VkDevice, proc: types.PFN_vkGetDeviceProcAddr) !DeviceDispatch {
         return DeviceDispatch{
             .destroy_device = try loadDeviceProc(types.PFN_vkDestroyDevice, proc, device, "vkDestroyDevice"),
             .get_device_queue = try loadDeviceProc(types.PFN_vkGetDeviceQueue, proc, device, "vkGetDeviceQueue"),

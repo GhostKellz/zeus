@@ -73,6 +73,8 @@ pub const VkStructureType = enum(u32) {
     TIMELINE_SEMAPHORE_SUBMIT_INFO = 1000207003,
     SEMAPHORE_WAIT_INFO = 1000207004,
     SEMAPHORE_SIGNAL_INFO = 1000207005,
+    PHYSICAL_DEVICE_FEATURES_2 = 1000059000,
+    PHYSICAL_DEVICE_PROPERTIES_2 = 1000059001,
     _,
 };
 
@@ -718,6 +720,581 @@ pub const PFN_vkDestroySwapchainKHR = *const fn (VkDevice, VkSwapchainKHR, ?*con
 pub const PFN_vkGetSwapchainImagesKHR = *const fn (VkDevice, VkSwapchainKHR, *u32, ?[*]VkImage) callconv(.c) VkResult;
 pub const PFN_vkAcquireNextImageKHR = *const fn (VkDevice, VkSwapchainKHR, u64, VkSemaphore, VkFence, *u32) callconv(.c) VkResult;
 pub const PFN_vkQueuePresentKHR = *const fn (VkQueue, *const VkPresentInfoKHR) callconv(.c) VkResult;
+
+// ===== Phase 2: Additional Vulkan 1.3/1.4 Core Functions =====
+
+// Instance functions
+pub const PFN_vkGetPhysicalDeviceFeatures2 = *const fn (VkPhysicalDevice, *VkPhysicalDeviceFeatures2) callconv(.c) void;
+pub const PFN_vkGetPhysicalDeviceProperties2 = *const fn (VkPhysicalDevice, *VkPhysicalDeviceProperties2) callconv(.c) void;
+pub const PFN_vkEnumerateDeviceLayerProperties = *const fn (VkPhysicalDevice, *u32, ?[*]VkLayerProperties) callconv(.c) VkResult;
+
+// Shader and pipeline functions
+pub const PFN_vkCreateShaderModule = *const fn (VkDevice, *const VkShaderModuleCreateInfo, ?*const VkAllocationCallbacks, *VkShaderModule) callconv(.c) VkResult;
+pub const PFN_vkDestroyShaderModule = *const fn (VkDevice, VkShaderModule, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreatePipelineLayout = *const fn (VkDevice, *const VkPipelineLayoutCreateInfo, ?*const VkAllocationCallbacks, *VkPipelineLayout) callconv(.c) VkResult;
+pub const PFN_vkDestroyPipelineLayout = *const fn (VkDevice, VkPipelineLayout, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreateGraphicsPipelines = *const fn (VkDevice, VkPipelineCache, u32, *const VkGraphicsPipelineCreateInfo, ?*const VkAllocationCallbacks, *VkPipeline) callconv(.c) VkResult;
+pub const PFN_vkCreateComputePipelines = *const fn (VkDevice, VkPipelineCache, u32, *const VkComputePipelineCreateInfo, ?*const VkAllocationCallbacks, *VkPipeline) callconv(.c) VkResult;
+pub const PFN_vkDestroyPipeline = *const fn (VkDevice, VkPipeline, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreateRenderPass = *const fn (VkDevice, *const VkRenderPassCreateInfo, ?*const VkAllocationCallbacks, *VkRenderPass) callconv(.c) VkResult;
+pub const PFN_vkDestroyRenderPass = *const fn (VkDevice, VkRenderPass, ?*const VkAllocationCallbacks) callconv(.c) void;
+
+// Descriptor functions
+pub const PFN_vkCreateDescriptorSetLayout = *const fn (VkDevice, *const VkDescriptorSetLayoutCreateInfo, ?*const VkAllocationCallbacks, *VkDescriptorSetLayout) callconv(.c) VkResult;
+pub const PFN_vkDestroyDescriptorSetLayout = *const fn (VkDevice, VkDescriptorSetLayout, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreateDescriptorPool = *const fn (VkDevice, *const VkDescriptorPoolCreateInfo, ?*const VkAllocationCallbacks, *VkDescriptorPool) callconv(.c) VkResult;
+pub const PFN_vkDestroyDescriptorPool = *const fn (VkDevice, VkDescriptorPool, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkAllocateDescriptorSets = *const fn (VkDevice, *const VkDescriptorSetAllocateInfo, *VkDescriptorSet) callconv(.c) VkResult;
+pub const PFN_vkFreeDescriptorSets = *const fn (VkDevice, VkDescriptorPool, u32, *const VkDescriptorSet) callconv(.c) VkResult;
+pub const PFN_vkUpdateDescriptorSets = *const fn (VkDevice, u32, ?[*]const VkWriteDescriptorSet, u32, ?[*]const VkCopyDescriptorSet) callconv(.c) void;
+
+// Query pool functions
+pub const PFN_vkCreateQueryPool = *const fn (VkDevice, *const VkQueryPoolCreateInfo, ?*const VkAllocationCallbacks, *VkQueryPool) callconv(.c) VkResult;
+pub const PFN_vkDestroyQueryPool = *const fn (VkDevice, VkQueryPool, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkGetQueryPoolResults = *const fn (VkDevice, VkQueryPool, u32, u32, usize, *anyopaque, usize, VkQueryResultFlags) callconv(.c) VkResult;
+pub const PFN_vkCmdBeginQuery = *const fn (VkCommandBuffer, VkQueryPool, u32, VkQueryControlFlags) callconv(.c) void;
+pub const PFN_vkCmdEndQuery = *const fn (VkCommandBuffer, VkQueryPool, u32) callconv(.c) void;
+pub const PFN_vkCmdResetQueryPool = *const fn (VkCommandBuffer, VkQueryPool, u32, u32) callconv(.c) void;
+pub const PFN_vkCmdWriteTimestamp = *const fn (VkCommandBuffer, VkPipelineStageFlags, VkQueryPool, u32) callconv(.c) void;
+
+// Sampler functions
+pub const PFN_vkCreateSampler = *const fn (VkDevice, *const VkSamplerCreateInfo, ?*const VkAllocationCallbacks, *VkSampler) callconv(.c) VkResult;
+pub const PFN_vkDestroySampler = *const fn (VkDevice, VkSampler, ?*const VkAllocationCallbacks) callconv(.c) void;
+
+// Drawing commands
+pub const PFN_vkCmdDrawIndexed = *const fn (VkCommandBuffer, u32, u32, u32, i32, u32) callconv(.c) void;
+pub const PFN_vkCmdDrawIndirect = *const fn (VkCommandBuffer, VkBuffer, VkDeviceSize, u32, u32) callconv(.c) void;
+pub const PFN_vkCmdBindIndexBuffer = *const fn (VkCommandBuffer, VkBuffer, VkDeviceSize, VkIndexType) callconv(.c) void;
+
+// Image operations
+pub const PFN_vkCmdCopyImage = *const fn (VkCommandBuffer, VkImage, VkImageLayout, VkImage, VkImageLayout, u32, *const VkImageCopy) callconv(.c) void;
+pub const PFN_vkCmdBlitImage = *const fn (VkCommandBuffer, VkImage, VkImageLayout, VkImage, VkImageLayout, u32, *const VkImageBlit, VkFilter) callconv(.c) void;
+pub const PFN_vkCmdResolveImage = *const fn (VkCommandBuffer, VkImage, VkImageLayout, VkImage, VkImageLayout, u32, *const VkImageResolve) callconv(.c) void;
+pub const PFN_vkCmdClearColorImage = *const fn (VkCommandBuffer, VkImage, VkImageLayout, *const VkClearColorValue, u32, *const VkImageSubresourceRange) callconv(.c) void;
+pub const PFN_vkCmdClearDepthStencilImage = *const fn (VkCommandBuffer, VkImage, VkImageLayout, *const VkClearDepthStencilValue, u32, *const VkImageSubresourceRange) callconv(.c) void;
+
+// Compute commands
+pub const PFN_vkCmdDispatch = *const fn (VkCommandBuffer, u32, u32, u32) callconv(.c) void;
+pub const PFN_vkCmdDispatchIndirect = *const fn (VkCommandBuffer, VkBuffer, VkDeviceSize) callconv(.c) void;
+
+// ===== Phase 2: Missing Type Definitions for New Functions =====
+
+// Query pool types
+pub const VkQueryPool_T = opaque {};
+pub const VkQueryPool = *VkQueryPool_T;
+
+pub const VkQueryResultFlags = VkFlags;
+pub const VkQueryResultFlagBits = enum(u32) {
+    result_64 = 0x00000001,
+    wait = 0x00000002,
+    with_availability = 0x00000004,
+    partial = 0x00000008,
+};
+
+pub const VkQueryPoolCreateInfo = extern struct {
+    sType: VkStructureType = .QUERY_POOL_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    query_type: VkQueryType,
+    query_count: u32,
+    pipeline_statistics: VkQueryPipelineStatisticFlags = 0,
+};
+
+pub const VkQueryType = enum(u32) {
+    occlusion = 0,
+    pipeline_statistics = 1,
+    timestamp = 2,
+};
+
+// Base pipeline-related enums and flags (minimal definitions for Phase 2)
+pub const VkPipelineCreateFlags = VkFlags;
+pub const VkDescriptorSetLayoutCreateFlags = VkFlags;
+pub const VkDescriptorPoolCreateFlags = VkFlags;
+
+pub const VkFilter = enum(u32) {
+    NEAREST = 0,
+    LINEAR = 1,
+};
+
+pub const VkCompareOp = enum(u32) {
+    NEVER = 0,
+    LESS = 1,
+    EQUAL = 2,
+    LESS_OR_EQUAL = 3,
+    GREATER = 4,
+    NOT_EQUAL = 5,
+    GREATER_OR_EQUAL = 6,
+    ALWAYS = 7,
+};
+
+pub const VkLogicOp = enum(u32) {
+    CLEAR = 0,
+    AND = 1,
+    AND_REVERSE = 2,
+    COPY = 3,
+    AND_INVERTED = 4,
+    NO_OP = 5,
+    XOR = 6,
+    OR = 7,
+    NOR = 8,
+    EQUIVALENT = 9,
+    INVERT = 10,
+    OR_REVERSE = 11,
+    COPY_INVERTED = 12,
+    OR_INVERTED = 13,
+    NAND = 14,
+    SET = 15,
+};
+
+pub const VkPrimitiveTopology = enum(u32) {
+    POINT_LIST = 0,
+    LINE_LIST = 1,
+    LINE_STRIP = 2,
+    TRIANGLE_LIST = 3,
+    TRIANGLE_STRIP = 4,
+    TRIANGLE_FAN = 5,
+};
+
+pub const VkPolygonMode = enum(u32) {
+    FILL = 0,
+    LINE = 1,
+    POINT = 2,
+};
+
+pub const VkDynamicState = enum(u32) {
+    VIEWPORT = 0,
+    SCISSOR = 1,
+    LINE_WIDTH = 2,
+    DEPTH_BIAS = 3,
+    BLEND_CONSTANTS = 4,
+    DEPTH_BOUNDS = 5,
+    STENCIL_COMPARE_MASK = 6,
+    STENCIL_WRITE_MASK = 7,
+    STENCIL_REFERENCE = 8,
+};
+
+pub const VkDescriptorType = enum(u32) {
+    SAMPLER = 0,
+    COMBINED_IMAGE_SAMPLER = 1,
+    SAMPLED_IMAGE = 2,
+    STORAGE_IMAGE = 3,
+    UNIFORM_TEXEL_BUFFER = 4,
+    STORAGE_TEXEL_BUFFER = 5,
+    UNIFORM_BUFFER = 6,
+    STORAGE_BUFFER = 7,
+    UNIFORM_BUFFER_DYNAMIC = 8,
+    STORAGE_BUFFER_DYNAMIC = 9,
+    INPUT_ATTACHMENT = 10,
+};
+
+pub const VkSpecializationInfo = extern struct {
+    map_entry_count: u32 = 0,
+    p_map_entries: ?[*]const VkSpecializationMapEntry = null,
+    data_size: usize = 0,
+    p_data: ?*const anyopaque = null,
+};
+
+pub const VkSpecializationMapEntry = extern struct {
+    constant_id: u32,
+    offset: u32,
+    size: usize,
+};
+
+pub const VkVertexInputBindingDescription = extern struct {
+    binding: u32,
+    stride: u32,
+    input_rate: VkVertexInputRate,
+};
+
+pub const VkVertexInputRate = enum(u32) {
+    VERTEX = 0,
+    INSTANCE = 1,
+};
+
+pub const VkVertexInputAttributeDescription = extern struct {
+    location: u32,
+    binding: u32,
+    format: VkFormat,
+    offset: u32,
+};
+
+pub const VkPipelineColorBlendAttachmentState = extern struct {
+    blend_enable: VkBool32,
+    src_color_blend_factor: VkBlendFactor,
+    dst_color_blend_factor: VkBlendFactor,
+    color_blend_op: VkBlendOp,
+    src_alpha_blend_factor: VkBlendFactor,
+    dst_alpha_blend_factor: VkBlendFactor,
+    alpha_blend_op: VkBlendOp,
+    color_write_mask: VkColorComponentFlags,
+};
+
+pub const VkBlendFactor = enum(u32) {
+    ZERO = 0,
+    ONE = 1,
+    SRC_COLOR = 2,
+    ONE_MINUS_SRC_COLOR = 3,
+    DST_COLOR = 4,
+    ONE_MINUS_DST_COLOR = 5,
+    SRC_ALPHA = 6,
+    ONE_MINUS_SRC_ALPHA = 7,
+    DST_ALPHA = 8,
+    ONE_MINUS_DST_ALPHA = 9,
+};
+
+pub const VkBlendOp = enum(u32) {
+    ADD = 0,
+    SUBTRACT = 1,
+    REVERSE_SUBTRACT = 2,
+    MIN = 3,
+    MAX = 4,
+};
+
+pub const VkColorComponentFlags = VkFlags;
+
+pub const VkStencilOpState = extern struct {
+    fail_op: VkStencilOp = .KEEP,
+    pass_op: VkStencilOp = .KEEP,
+    depth_fail_op: VkStencilOp = .KEEP,
+    compare_op: VkCompareOp = .NEVER,
+    compare_mask: u32 = 0,
+    write_mask: u32 = 0,
+    reference: u32 = 0,
+};
+
+pub const VkStencilOp = enum(u32) {
+    KEEP = 0,
+    ZERO = 1,
+    REPLACE = 2,
+    INCREMENT_AND_CLAMP = 3,
+    DECREMENT_AND_CLAMP = 4,
+    INVERT = 5,
+    INCREMENT_AND_WRAP = 6,
+    DECREMENT_AND_WRAP = 7,
+};
+
+pub const VkSamplerMipmapMode = enum(u32) {
+    NEAREST = 0,
+    LINEAR = 1,
+};
+
+pub const VkSamplerAddressMode = enum(u32) {
+    REPEAT = 0,
+    MIRRORED_REPEAT = 1,
+    CLAMP_TO_EDGE = 2,
+    CLAMP_TO_BORDER = 3,
+};
+
+pub const VkBorderColor = enum(u32) {
+    FLOAT_TRANSPARENT_BLACK = 0,
+    INT_TRANSPARENT_BLACK = 1,
+    FLOAT_OPAQUE_BLACK = 2,
+    INT_OPAQUE_BLACK = 3,
+    FLOAT_OPAQUE_WHITE = 4,
+    INT_OPAQUE_WHITE = 5,
+};
+
+pub const VkCullModeFlags = VkFlags;
+pub const VkFrontFace = enum(u32) {
+    COUNTER_CLOCKWISE = 0,
+    CLOCKWISE = 1,
+};
+
+pub const VkBufferView_T = opaque {};
+pub const VkBufferView = *VkBufferView_T;
+
+// Shader and pipeline types
+pub const VkShaderModuleCreateInfo = extern struct {
+    sType: VkStructureType = .SHADER_MODULE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    code_size: usize,
+    p_code: [*]const u32,
+};
+
+pub const VkPipelineLayoutCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_LAYOUT_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    set_layout_count: u32 = 0,
+    p_set_layouts: ?[*]const VkDescriptorSetLayout = null,
+    push_constant_range_count: u32 = 0,
+    p_push_constant_ranges: ?[*]const VkPushConstantRange = null,
+};
+
+pub const VkGraphicsPipelineCreateInfo = extern struct {
+    sType: VkStructureType = .GRAPHICS_PIPELINE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkPipelineCreateFlags = 0,
+    stage_count: u32,
+    p_stages: [*]const VkPipelineShaderStageCreateInfo,
+    p_vertex_input_state: ?*const VkPipelineVertexInputStateCreateInfo,
+    p_input_assembly_state: ?*const VkPipelineInputAssemblyStateCreateInfo,
+    p_tessellation_state: ?*const anyopaque = null,
+    p_viewport_state: ?*const VkPipelineViewportStateCreateInfo,
+    p_rasterization_state: ?*const VkPipelineRasterizationStateCreateInfo,
+    p_multisample_state: ?*const VkPipelineMultisampleStateCreateInfo,
+    p_depth_stencil_state: ?*const VkPipelineDepthStencilStateCreateInfo,
+    p_color_blend_state: ?*const VkPipelineColorBlendStateCreateInfo,
+    p_dynamic_state: ?*const VkPipelineDynamicStateCreateInfo = null,
+    layout: VkPipelineLayout,
+    render_pass: VkRenderPass,
+    subpass: u32,
+    base_pipeline_handle: ?VkPipeline = null,
+    base_pipeline_index: i32 = -1,
+};
+
+pub const VkComputePipelineCreateInfo = extern struct {
+    sType: VkStructureType = .COMPUTE_PIPELINE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkPipelineCreateFlags = 0,
+    stage: VkPipelineShaderStageCreateInfo,
+    layout: VkPipelineLayout,
+    base_pipeline_handle: ?VkPipeline = null,
+    base_pipeline_index: i32 = -1,
+};
+
+pub const VkPipelineShaderStageCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    stage: VkShaderStageFlagBits,
+    module: VkShaderModule,
+    p_name: [*:0]const u8,
+    p_specialization_info: ?*const VkSpecializationInfo = null,
+};
+
+pub const VkPipelineVertexInputStateCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    vertex_binding_description_count: u32 = 0,
+    p_vertex_binding_descriptions: ?[*]const VkVertexInputBindingDescription = null,
+    vertex_attribute_description_count: u32 = 0,
+    p_vertex_attribute_descriptions: ?[*]const VkVertexInputAttributeDescription = null,
+};
+
+pub const VkPipelineInputAssemblyStateCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    topology: VkPrimitiveTopology,
+    primitive_restart_enable: VkBool32 = 0,
+};
+
+pub const VkPipelineViewportStateCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    viewport_count: u32,
+    p_viewports: ?[*]const VkViewport,
+    scissor_count: u32,
+    p_scissors: ?[*]const VkRect2D,
+};
+
+pub const VkPipelineRasterizationStateCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    depth_clamp_enable: VkBool32 = 0,
+    rasterizer_discard_enable: VkBool32 = 0,
+    polygon_mode: VkPolygonMode,
+    cull_mode: VkCullModeFlags,
+    front_face: VkFrontFace,
+    depth_bias_enable: VkBool32 = 0,
+    depth_bias_constant_factor: f32 = 0.0,
+    depth_bias_clamp: f32 = 0.0,
+    depth_bias_slope_factor: f32 = 0.0,
+    line_width: f32 = 1.0,
+};
+
+pub const VkPipelineMultisampleStateCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    rasterization_samples: VkSampleCountFlagBits,
+    sample_shading_enable: VkBool32 = 0,
+    min_sample_shading: f32 = 0.0,
+    p_sample_mask: ?[*]const u32 = null,
+    alpha_to_coverage_enable: VkBool32 = 0,
+    alpha_to_one_enable: VkBool32 = 0,
+};
+
+pub const VkPipelineDepthStencilStateCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    depth_test_enable: VkBool32,
+    depth_write_enable: VkBool32,
+    depth_compare_op: VkCompareOp,
+    depth_bounds_test_enable: VkBool32 = 0,
+    stencil_test_enable: VkBool32 = 0,
+    front: VkStencilOpState = .{},
+    back: VkStencilOpState = .{},
+    min_depth_bounds: f32 = 0.0,
+    max_depth_bounds: f32 = 1.0,
+};
+
+pub const VkPipelineColorBlendStateCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    logic_op_enable: VkBool32 = 0,
+    logic_op: VkLogicOp = .CLEAR,
+    attachment_count: u32,
+    p_attachments: [*]const VkPipelineColorBlendAttachmentState,
+    blend_constants: [4]f32 = .{ 0.0, 0.0, 0.0, 0.0 },
+};
+
+pub const VkPipelineDynamicStateCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    dynamic_state_count: u32,
+    p_dynamic_states: [*]const VkDynamicState,
+};
+
+// Descriptor types
+pub const VkDescriptorSetLayoutCreateInfo = extern struct {
+    sType: VkStructureType = .DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkDescriptorSetLayoutCreateFlags = 0,
+    binding_count: u32 = 0,
+    p_bindings: ?[*]const VkDescriptorSetLayoutBinding = null,
+};
+
+pub const VkDescriptorSetLayoutBinding = extern struct {
+    binding: u32,
+    descriptor_type: VkDescriptorType,
+    descriptor_count: u32,
+    stage_flags: VkShaderStageFlags,
+    p_immutable_samplers: ?[*]const VkSampler = null,
+};
+
+pub const VkDescriptorPoolCreateInfo = extern struct {
+    sType: VkStructureType = .DESCRIPTOR_POOL_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkDescriptorPoolCreateFlags = 0,
+    max_sets: u32,
+    pool_size_count: u32,
+    p_pool_sizes: [*]const VkDescriptorPoolSize,
+};
+
+pub const VkDescriptorPoolSize = extern struct {
+    type: VkDescriptorType,
+    descriptor_count: u32,
+};
+
+pub const VkDescriptorSetAllocateInfo = extern struct {
+    sType: VkStructureType = .DESCRIPTOR_SET_ALLOCATE_INFO,
+    pNext: ?*const anyopaque = null,
+    descriptor_pool: VkDescriptorPool,
+    descriptor_set_count: u32,
+    p_set_layouts: [*]const VkDescriptorSetLayout,
+};
+
+pub const VkWriteDescriptorSet = extern struct {
+    sType: VkStructureType = .WRITE_DESCRIPTOR_SET,
+    pNext: ?*const anyopaque = null,
+    dst_set: VkDescriptorSet,
+    dst_binding: u32,
+    dst_array_element: u32 = 0,
+    descriptor_count: u32,
+    descriptor_type: VkDescriptorType,
+    p_image_info: ?[*]const VkDescriptorImageInfo = null,
+    p_buffer_info: ?[*]const VkDescriptorBufferInfo = null,
+    p_texel_buffer_view: ?[*]const VkBufferView = null,
+};
+
+pub const VkCopyDescriptorSet = extern struct {
+    sType: VkStructureType = .COPY_DESCRIPTOR_SET,
+    pNext: ?*const anyopaque = null,
+    src_set: VkDescriptorSet,
+    src_binding: u32,
+    src_array_element: u32 = 0,
+    dst_set: VkDescriptorSet,
+    dst_binding: u32,
+    dst_array_element: u32 = 0,
+    descriptor_count: u32,
+};
+
+pub const VkDescriptorImageInfo = extern struct {
+    sampler: ?VkSampler = null,
+    image_view: ?VkImageView = null,
+    image_layout: VkImageLayout,
+};
+
+pub const VkDescriptorBufferInfo = extern struct {
+    buffer: VkBuffer,
+    offset: VkDeviceSize,
+    range: VkDeviceSize,
+};
+
+// Sampler types
+pub const VkSamplerCreateInfo = extern struct {
+    sType: VkStructureType = .SAMPLER_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkFlags = 0,
+    mag_filter: VkFilter,
+    min_filter: VkFilter,
+    mipmap_mode: VkSamplerMipmapMode,
+    address_mode_u: VkSamplerAddressMode,
+    address_mode_v: VkSamplerAddressMode,
+    address_mode_w: VkSamplerAddressMode,
+    mip_lod_bias: f32 = 0.0,
+    anisotropy_enable: VkBool32 = 0,
+    max_anisotropy: f32 = 1.0,
+    compare_enable: VkBool32 = 0,
+    compare_op: VkCompareOp = .NEVER,
+    min_lod: f32 = 0.0,
+    max_lod: f32 = 1000.0,
+    border_color: VkBorderColor = .FLOAT_TRANSPARENT_BLACK,
+    unnormalized_coordinates: VkBool32 = 0,
+};
+
+// Image operation types
+pub const VkIndexType = enum(u32) {
+    uint16 = 0,
+    uint32 = 1,
+    none = 1000165000,
+    uint8 = 1000265000,
+};
+
+pub const VkImageCopy = extern struct {
+    src_subresource: VkImageSubresourceLayers,
+    src_offset: VkOffset3D,
+    dst_subresource: VkImageSubresourceLayers,
+    dst_offset: VkOffset3D,
+    extent: VkExtent3D,
+};
+
+pub const VkImageBlit = extern struct {
+    src_subresource: VkImageSubresourceLayers,
+    src_offsets: [2]VkOffset3D,
+    dst_subresource: VkImageSubresourceLayers,
+    dst_offsets: [2]VkOffset3D,
+};
+
+pub const VkImageResolve = extern struct {
+    src_subresource: VkImageSubresourceLayers,
+    src_offset: VkOffset3D,
+    dst_subresource: VkImageSubresourceLayers,
+    dst_offset: VkOffset3D,
+    extent: VkExtent3D,
+};
+
+// Features2 and Properties2 for Vulkan 1.1+
+pub const VkPhysicalDeviceFeatures2 = extern struct {
+    sType: VkStructureType = .PHYSICAL_DEVICE_FEATURES_2,
+    pNext: ?*anyopaque = null,
+    features: VkPhysicalDeviceFeatures,
+};
+
+pub const VkPhysicalDeviceProperties2 = extern struct {
+    sType: VkStructureType = .PHYSICAL_DEVICE_PROPERTIES_2,
+    pNext: ?*anyopaque = null,
+    properties: VkPhysicalDeviceProperties,
+};
 
 pub const VkFence = *opaque {};
 
