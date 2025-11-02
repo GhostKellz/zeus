@@ -60,8 +60,8 @@ pub const Loader = struct {
 
     fn populateGetProcAddrs(self: *Loader) !void {
         const lib = self.lib orelse return vk_errors.Error.LibraryNotFound;
-        self.get_instance_proc = try lookupProc(types.PFN_vkGetInstanceProcAddr, lib, "vkGetInstanceProcAddr");
-        self.get_device_proc = try lookupProc(types.PFN_vkGetDeviceProcAddr, lib, "vkGetDeviceProcAddr");
+        self.get_instance_proc = try lookupProc(types.PFN_vkGetInstanceProcAddr, &lib, "vkGetInstanceProcAddr");
+        self.get_device_proc = try lookupProc(types.PFN_vkGetDeviceProcAddr, &lib, "vkGetDeviceProcAddr");
     }
 
     fn lookupProc(comptime T: type, lib: *const std.DynLib, name: [:0]const u8) !T {
