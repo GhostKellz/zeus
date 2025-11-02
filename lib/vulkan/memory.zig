@@ -64,13 +64,13 @@ pub const Allocation = struct {
     pub fn flush(self: *Allocation, ranges: []const types.VkMappedMemoryRange) errors.Error!void {
         if (ranges.len == 0) return;
         const device_handle = self.device.handle orelse return errors.Error.DeviceCreationFailed;
-        try errors.ensureSuccess(self.device.dispatch.flush_mapped_memory_ranges(device_handle, @intCast(ranges.len), ranges.ptr));
+        try errors.ensureSuccess(self.device.dispatch.flush_mapped_memory_ranges(device_handle, @intCast(ranges.len), @ptrCast(ranges.ptr)));
     }
 
     pub fn invalidate(self: *Allocation, ranges: []const types.VkMappedMemoryRange) errors.Error!void {
         if (ranges.len == 0) return;
         const device_handle = self.device.handle orelse return errors.Error.DeviceCreationFailed;
-        try errors.ensureSuccess(self.device.dispatch.invalidate_mapped_memory_ranges(device_handle, @intCast(ranges.len), ranges.ptr));
+        try errors.ensureSuccess(self.device.dispatch.invalidate_mapped_memory_ranges(device_handle, @intCast(ranges.len), @ptrCast(ranges.ptr)));
     }
 };
 
@@ -152,7 +152,7 @@ pub fn logReBARUsage(memory_props: types.VkPhysicalDeviceMemoryProperties, type_
 }
 
 fn makeMemoryProperties() types.VkPhysicalDeviceMemoryProperties {
-    var props: types.VkPhysicalDeviceMemoryProperties = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var props: types.VkPhysicalDeviceMemoryProperties = undefined;
     props.memoryTypeCount = 3;
     props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
     props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 0 };
@@ -175,7 +175,7 @@ fn makeFakeDevice() device_mod.Device {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x100))),
         .allocation_callbacks = null,
     };
@@ -224,12 +224,12 @@ fn stubUnmapMemory(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.c) void
     unmap_calls += 1;
 }
 
-fn stubFlush(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
+fn stubFlush(_: types.VkDevice, _: u32, _: *const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     flush_calls += 1;
     return .SUCCESS;
 }
 
-fn stubInvalidate(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
+fn stubInvalidate(_: types.VkDevice, _: u32, _: *const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     invalidate_calls += 1;
     return .SUCCESS;
 }

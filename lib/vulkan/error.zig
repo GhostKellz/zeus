@@ -35,7 +35,7 @@ pub const VkError = error{
     Unknown,
 };
 
-pub const Error = std.meta.errorSetUnion(BaseError, VkError);
+pub const Error = BaseError || VkError;
 
 pub fn ensureSuccess(result: types.VkResult) Error!void {
     switch (result) {

@@ -20,7 +20,7 @@ pub const PipelineCache = struct {
         var path_copy: ?[]u8 = null;
         if (options.path) |path| {
             path_copy = try allocator.alloc(u8, path.len);
-            std.mem.copy(u8, path_copy.?, path);
+            std.mem.copyForwards(u8, path_copy.?, path);
         }
 
         var initial_data: ?[]u8 = null;

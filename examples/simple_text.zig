@@ -103,7 +103,7 @@ fn stubGetDeviceQueue(_: types.VkDevice, _: u32, _: u32, out_queue: *types.VkQue
     out_queue.* = fake_queue;
 }
 
-fn stubQueueSubmit(_: types.VkQueue, _: u32, _: ?[*]const types.VkSubmitInfo, _: types.VkFence) callconv(.c) types.VkResult {
+fn stubQueueSubmit(_: types.VkQueue, _: u32, _: ?[*]const types.VkSubmitInfo, _: ?types.VkFence) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 

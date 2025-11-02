@@ -246,7 +246,7 @@ const Capture = struct {
 };
 
 fn makeMemoryProps() types.VkPhysicalDeviceMemoryProperties {
-    var props: types.VkPhysicalDeviceMemoryProperties = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var props: types.VkPhysicalDeviceMemoryProperties = undefined;
     props.memoryTypeCount = 2;
     props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
     props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
@@ -268,7 +268,7 @@ fn makeFakeDevice() device_mod.Device {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x10))),
         .allocation_callbacks = null,
     };
@@ -296,11 +296,11 @@ fn memoryStubMap(_: types.VkDevice, _: types.VkDeviceMemory, _: types.VkDeviceSi
 
 fn memoryStubUnmap(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.c) void {}
 
-fn memoryStubFlush(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
+fn memoryStubFlush(_: types.VkDevice, _: u32, _: *const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn memoryStubInvalidate(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
+fn memoryStubInvalidate(_: types.VkDevice, _: u32, _: *const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 

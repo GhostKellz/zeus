@@ -81,7 +81,7 @@ pub const CommandPool = struct {
         if (buffers.len == 0) return;
         const pool_handle = self.handle orelse return;
         const device_handle = self.device.handle orelse return;
-        self.device.dispatch.free_command_buffers(device_handle, pool_handle, @intCast(buffers.len), buffers.ptr);
+        self.device.dispatch.free_command_buffers(device_handle, pool_handle, @intCast(buffers.len), @ptrCast(buffers.ptr));
     }
 };
 
@@ -185,7 +185,7 @@ test "beginRecording applies correct usage flags" {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0xDEAD))),
         .allocation_callbacks = null,
     };

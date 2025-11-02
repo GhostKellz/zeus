@@ -80,7 +80,7 @@ pub fn logDrmHighRefresh(threshold_hz: u32) void {
                 if (refresh > best_refresh) {
                     best_refresh = refresh;
                     best_name_len = @min(entry.name.len, best_name_buf.len);
-                    std.mem.copy(u8, best_name_buf[0..best_name_len], entry.name[0..best_name_len]);
+                    std.mem.copyForwards(u8, best_name_buf[0..best_name_len], entry.name[0..best_name_len]);
                 }
             }
         }

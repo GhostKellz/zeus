@@ -757,11 +757,11 @@ pub const TextRenderer = struct {
 
         const frame_states = try allocator.alloc(FrameState, frame_count);
         errdefer allocator.free(frame_states);
-        std.mem.set(FrameState, frame_states, .{});
+        @memset(frame_states, .{});
 
         const frame_stats = try allocator.alloc(FrameTelemetry, frame_count);
         errdefer allocator.free(frame_stats);
-        std.mem.set(FrameTelemetry, frame_stats, .{});
+        @memset(frame_stats, .{});
 
         var soa_storage_opt: ?InstanceSoA = null;
         errdefer if (soa_storage_opt) |*soa| soa.deinit(allocator);
@@ -873,7 +873,7 @@ pub const TextRenderer = struct {
         if (self.loadActiveFrame() == null) return error.NoActiveFrame;
         const src_bytes = std.mem.sliceAsBytes(matrix);
         const dest_bytes = std.mem.sliceAsBytes(&self.projection);
-        std.mem.copy(u8, dest_bytes, src_bytes);
+        std.mem.copyForwards(u8, dest_bytes, src_bytes);
     }
 
     pub fn queueQuad(self: *TextRenderer, quad: TextQuad) RenderError!void {
@@ -1527,7 +1527,7 @@ fn copyInstances(dest: []Instance, quads: []const TextQuad) void {
 fn copyInstancesScalar(dest: []Instance, quads: []const TextQuad) void {
     const src_ptr = @as([*]const Instance, @ptrCast(quads.ptr));
     const src_slice = src_ptr[0..quads.len];
-    std.mem.copy(Instance, dest, src_slice);
+    std.mem.copyForwards(Instance, dest, src_slice);
 }
 
 fn copyInstancesAvx2(dest: []Instance, quads: []const TextQuad) void {
@@ -1751,7 +1751,7 @@ fn stubGetPipelineCacheData(_: types.VkDevice, _: types.VkPipelineCache, size: *
     const out_len = size.*;
     if (out_len == 0) return .SUCCESS;
     const bytes = @as([*]u8, @ptrCast(data.?))[0..out_len];
-    std.mem.set(u8, bytes, 0xAB);
+    @memset(bytes, 0xAB);
     return .SUCCESS;
 }
 
@@ -1999,7 +1999,7 @@ test "TextRenderer.init wires core Vulkan objects" {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = fake_device_handle,
         .allocation_callbacks = null,
     };
@@ -2007,7 +2007,7 @@ test "TextRenderer.init wires core Vulkan objects" {
     setupTestDispatch(&device);
     TestCapture.reset();
 
-    var memory_props = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var memory_props = .{};
     memory_props.memoryTypeCount = 2;
     memory_props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
     memory_props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
@@ -2064,7 +2064,7 @@ test "TextRenderer.queueQuads batches glyph data" {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = fake_device_handle,
         .allocation_callbacks = null,
     };
@@ -2072,7 +2072,7 @@ test "TextRenderer.queueQuads batches glyph data" {
     setupTestDispatch(&device);
     TestCapture.reset();
 
-    var memory_props = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var memory_props = .{};
     memory_props.memoryTypeCount = 2;
     memory_props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
     memory_props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
@@ -2147,7 +2147,7 @@ test "TextRenderer.beginFrame queues quads and encodes draw call" {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = fake_device_handle,
         .allocation_callbacks = null,
     };
@@ -2155,7 +2155,7 @@ test "TextRenderer.beginFrame queues quads and encodes draw call" {
     setupTestDispatch(&device);
     TestCapture.reset();
 
-    var memory_props = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var memory_props = .{};
     memory_props.memoryTypeCount = 2;
     memory_props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
     memory_props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
@@ -2255,7 +2255,7 @@ test "TextRenderer adjusts batch limit based on glyph load" {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = fake_device_handle,
         .allocation_callbacks = null,
     };
@@ -2263,7 +2263,7 @@ test "TextRenderer adjusts batch limit based on glyph load" {
     setupTestDispatch(&device);
     TestCapture.reset();
 
-    var memory_props = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var memory_props = .{};
     memory_props.memoryTypeCount = 2;
     memory_props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
     memory_props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
@@ -2326,7 +2326,7 @@ test "TextRenderer profiler aggregates frame telemetry" {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = fake_device_handle,
         .allocation_callbacks = null,
     };
@@ -2334,7 +2334,7 @@ test "TextRenderer profiler aggregates frame telemetry" {
     setupTestDispatch(&device);
     TestCapture.reset();
 
-    var memory_props = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var memory_props = .{};
     memory_props.memoryTypeCount = 2;
     memory_props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
     memory_props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
@@ -2424,7 +2424,7 @@ test "TextRenderer persists pipeline cache when enabled" {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = fake_device_handle,
         .allocation_callbacks = null,
     };
@@ -2432,7 +2432,7 @@ test "TextRenderer persists pipeline cache when enabled" {
     setupTestDispatch(&device);
     TestCapture.reset();
 
-    var memory_props = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var memory_props = .{};
     memory_props.memoryTypeCount = 2;
     memory_props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
     memory_props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };

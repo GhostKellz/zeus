@@ -6,6 +6,7 @@ const image = @import("image.zig");
 const buffer = @import("buffer.zig");
 const loader = @import("loader.zig");
 const commands = @import("commands.zig");
+const physical_device = @import("physical_device.zig");
 
 pub const GlyphKey = struct {
     font_id: u32,
@@ -207,7 +208,8 @@ pub const GlyphAtlas = struct {
             .{
                 .filter = .{
                     .required_flags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                    .preferred_flags = types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    .preferred_flags = types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                        (if (physical_device.detectReBAR(self.device.memory_properties)) types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT else 0),
                 },
             },
         );
@@ -633,7 +635,7 @@ const TestCapture = struct {
         barrier_calls = 0;
         last_copy = null;
         last_barrier = null;
-        std.mem.set(u8, mapped_storage[0..], 0);
+        @memset(mapped_storage[0..], 0);
         command_pool_create_calls = 0;
         command_pool_destroy_calls = 0;
         command_buffer_alloc_calls = 0;
@@ -652,7 +654,7 @@ fn makeTestDevice(allocator: std.mem.Allocator) device_mod.Device {
     var device = device_mod.Device{
         .allocator = allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = fake_device_handle,
         .allocation_callbacks = null,
     };
@@ -691,7 +693,7 @@ fn makeTestDevice(allocator: std.mem.Allocator) device_mod.Device {
 }
 
 fn makeMemoryProps() types.VkPhysicalDeviceMemoryProperties {
-    var props: types.VkPhysicalDeviceMemoryProperties = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var props: types.VkPhysicalDeviceMemoryProperties = undefined;
     props.memoryTypeCount = 2;
     props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
     props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
@@ -751,16 +753,17 @@ fn stubDestroyCommandPool(_: types.VkDevice, _: types.VkCommandPool, _: ?*const 
     TestCapture.command_pool_destroy_calls += 1;
 }
 
-fn stubAllocateCommandBuffers(_: types.VkDevice, info: *const types.VkCommandBufferAllocateInfo, buffers: [*]types.VkCommandBuffer) callconv(.c) types.VkResult {
+fn stubAllocateCommandBuffers(_: types.VkDevice, info: *const types.VkCommandBufferAllocateInfo, buffers: *types.VkCommandBuffer) callconv(.c) types.VkResult {
     TestCapture.command_buffer_alloc_calls += 1;
+    const buffer_list: [*]types.VkCommandBuffer = @ptrCast(buffers);
     var i: usize = 0;
     while (i < info.commandBufferCount) : (i += 1) {
-        buffers[i] = fake_command_buffer;
+        buffer_list[i] = fake_command_buffer;
     }
     return .SUCCESS;
 }
 
-fn stubFreeCommandBuffers(_: types.VkDevice, _: types.VkCommandPool, count: u32, _: [*]const types.VkCommandBuffer) callconv(.c) void {
+fn stubFreeCommandBuffers(_: types.VkDevice, _: types.VkCommandPool, count: u32, _: *const types.VkCommandBuffer) callconv(.c) void {
     if (count > 0) TestCapture.command_buffer_free_calls += 1;
 }
 
@@ -772,8 +775,13 @@ fn stubEndCommandBuffer(_: types.VkCommandBuffer) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubQueueSubmit(queue: types.VkQueue, submit_count: u32, infos: [*]const types.VkSubmitInfo, _: types.VkFence) callconv(.c) types.VkResult {
+fn stubQueueSubmit(queue: types.VkQueue, submit_count: u32, infos_opt: ?[*]const types.VkSubmitInfo, _: ?types.VkFence) callconv(.c) types.VkResult {
     TestCapture.queue_submit_calls += @intCast(submit_count);
+    const infos = infos_opt orelse {
+        std.debug.assert(submit_count == 0);
+        TestCapture.last_queue = queue;
+        return .SUCCESS;
+    };
     if (submit_count > 0) {
         const info = infos[0];
         std.debug.assert(info.commandBufferCount > 0);
@@ -829,11 +837,11 @@ fn stubMapMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: types.VkDeviceSi
 
 fn stubUnmapMemory(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.c) void {}
 
-fn stubFlushMemory(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
+fn stubFlushMemory(_: types.VkDevice, _: u32, _: *const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubInvalidateMemory(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
+fn stubInvalidateMemory(_: types.VkDevice, _: u32, _: *const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 

@@ -437,7 +437,7 @@ test "selectPresentMode falls back gracefully" {
 
 test "presentWithOptions attaches timing when supported" {
     TestTimingCapture.reset();
-    var dispatch = std.mem.zeroes(loader.DeviceDispatch);
+    var dispatch = undefined;
     dispatch.queue_present = TestTimingCapture.queuePresent;
     dispatch.get_refresh_cycle_duration_google = TestTimingCapture.getRefresh;
     dispatch.get_past_presentation_timing_google = TestTimingCapture.getPastTiming;
@@ -469,7 +469,7 @@ test "presentWithOptions attaches timing when supported" {
 
 test "presentWithOptions timing requires extension" {
     TestTimingCapture.reset();
-    var dispatch = std.mem.zeroes(loader.DeviceDispatch);
+    var dispatch = undefined;
     dispatch.queue_present = TestTimingCapture.queuePresent;
 
     var swapchain = Swapchain{
@@ -498,7 +498,7 @@ test "queryRefreshCycleDuration uses extension" {
     TestTimingCapture.reset();
     TestTimingCapture.refresh_value = 16_666_667;
 
-    var dispatch = std.mem.zeroes(loader.DeviceDispatch);
+    var dispatch = undefined;
     dispatch.get_refresh_cycle_duration_google = TestTimingCapture.getRefresh;
     dispatch.get_past_presentation_timing_google = TestTimingCapture.getPastTiming;
     dispatch.queue_present = TestTimingCapture.queuePresent;
@@ -525,7 +525,7 @@ test "queryRefreshCycleDuration uses extension" {
 
 test "fetchPastPresentationTimings retrieves data" {
     TestTimingCapture.reset();
-    var dispatch = std.mem.zeroes(loader.DeviceDispatch);
+    var dispatch = undefined;
     dispatch.get_past_presentation_timing_google = TestTimingCapture.getPastTiming;
     dispatch.queue_present = TestTimingCapture.queuePresent;
 

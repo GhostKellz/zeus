@@ -310,11 +310,11 @@ fn contains(haystack: []const u32, value: u32) bool {
 }
 
 test "supportsFeatures validates required bits" {
-    var available: types.VkPhysicalDeviceFeatures = .{};
+    var available: types.VkPhysicalDeviceFeatures = undefined;
     available.robustBufferAccess = 1;
     available.fillModeNonSolid = 1;
 
-    var required: types.VkPhysicalDeviceFeatures = .{};
+    var required: types.VkPhysicalDeviceFeatures = undefined;
     required.fillModeNonSolid = 1;
 
     try std.testing.expect(supportsFeatures(available, required));
@@ -325,7 +325,7 @@ test "supportsFeatures validates required bits" {
 }
 
 test "detectReBAR identifies large host-visible device local heap" {
-    var props: types.VkPhysicalDeviceMemoryProperties = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var props: types.VkPhysicalDeviceMemoryProperties = undefined;
     props.memoryHeapCount = 2;
     props.memoryHeaps[0] = .{
         .size = 12 * 1024 * 1024 * 1024,
@@ -348,9 +348,9 @@ test "detectReBAR identifies large host-visible device local heap" {
     try std.testing.expect(detectReBAR(props));
 
     var selection = Selection{
-        .physical_device = @as(types.VkPhysicalDevice, @ptrCast(@as(usize, 0x1))),
-        .properties = std.mem.zeroes(types.VkPhysicalDeviceProperties),
-        .features = std.mem.zeroes(types.VkPhysicalDeviceFeatures),
+        .physical_device = @ptrFromInt(0x1),
+        .properties = undefined,
+        .features = undefined,
         .memory_properties = props,
         .queues = .{ .graphics = 0 },
         .enabled_optional_extensions = &.{},
@@ -361,7 +361,7 @@ test "detectReBAR identifies large host-visible device local heap" {
 }
 
 test "detectReBAR returns false for small or non host-visible heaps" {
-    var props: types.VkPhysicalDeviceMemoryProperties = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var props: types.VkPhysicalDeviceMemoryProperties = undefined;
     props.memoryHeapCount = 1;
     props.memoryHeaps[0] = .{
         .size = 128 * 1024 * 1024,

@@ -103,7 +103,7 @@ fn buildQueueCreateInfos(allocator: std.mem.Allocator, queues: []const Device.Qu
     const infos = try allocator.alloc(types.VkDeviceQueueCreateInfo, queues.len);
     for (queues, infos) |request, *info| {
         const priorities = try allocator.alloc(f32, request.priorities.len);
-        std.mem.copy(f32, priorities, request.priorities);
+        std.mem.copyForwards(f32, priorities, request.priorities);
         info.* = types.VkDeviceQueueCreateInfo{
             .queueFamilyIndex = request.family_index,
             .queueCount = @intCast(request.priorities.len),

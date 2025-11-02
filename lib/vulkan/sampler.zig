@@ -94,7 +94,7 @@ fn makeDevice() device_mod.Device {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x20))),
         .allocation_callbacks = null,
     };

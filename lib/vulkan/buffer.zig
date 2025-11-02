@@ -101,7 +101,7 @@ pub const ManagedBuffer = struct {
         var map_state = try self.ensureMapped(offset, data.len);
         defer if (!map_state.existing) self.allocation.unmap();
 
-        std.mem.copy(u8, map_state.ptr[0..data.len], data);
+        std.mem.copyForwards(u8, map_state.ptr[0..data.len], data);
 
         if (!self.isCoherent()) {
             const range = types.VkMappedMemoryRange{
@@ -168,12 +168,12 @@ pub fn copyBuffer(device: *device_mod.Device, pool: *commands.CommandPool, queue
     device.dispatch.cmd_copy_buffer(command, src, dst, 1, &region);
     try commands.endCommandBuffer(device, command);
 
-    var submit = types.VkSubmitInfo{
+    const submit = types.VkSubmitInfo{
         .commandBufferCount = 1,
         .pCommandBuffers = buffers[0..].ptr,
     };
 
-    try errors.ensureSuccess(device.dispatch.queue_submit(queue, 1, &submit, null));
+    try errors.ensureSuccess(device.dispatch.queue_submit(queue, 1, @ptrCast(&submit), null));
     try errors.ensureSuccess(device.dispatch.queue_wait_idle(queue));
 }
 
@@ -224,7 +224,7 @@ pub fn transitionImageLayout(cmd: types.VkCommandBuffer, image: types.VkImage, o
         0,
         null,
         1,
-        &barrier,
+        @ptrCast(&barrier),
     );
 }
 
@@ -342,7 +342,7 @@ fn makeFakeDevice() device_mod.Device {
     var device = device_mod.Device{
         .allocator = std.testing.allocator,
         .loader = undefined,
-        .dispatch = std.mem.zeroes(loader.DeviceDispatch),
+        .dispatch = undefined,
         .handle = @as(types.VkDevice, @ptrFromInt(@as(usize, 0x2))),
         .allocation_callbacks = null,
     };
@@ -475,8 +475,9 @@ test "copyBuffer records command and submits" {
 }
 
 fn memoryProps() types.VkPhysicalDeviceMemoryProperties {
-    var props: types.VkPhysicalDeviceMemoryProperties = std.mem.zeroes(types.VkPhysicalDeviceMemoryProperties);
+    var props: types.VkPhysicalDeviceMemoryProperties = undefined;
     props.memoryTypeCount = 2;
+    props.memoryHeapCount = 1;
     props.memoryTypes[0] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, .heapIndex = 0 };
     props.memoryTypes[1] = .{ .propertyFlags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, .heapIndex = 1 };
     props.memoryHeapCount = 2;
@@ -509,7 +510,7 @@ fn resetMemoryCapture() void {
     memory_alloc_info = null;
     memory_flush_calls = 0;
     memory_unmap_calls = 0;
-    std.mem.set(u8, memory_storage[0..], 0);
+    @memset(memory_storage[0..], 0);
 }
 
 fn memoryStubAllocateMemory(_: types.VkDevice, info: *const types.VkMemoryAllocateInfo, _: ?*const types.VkAllocationCallbacks, memory_out: *types.VkDeviceMemory) callconv(.c) types.VkResult {
@@ -529,12 +530,12 @@ fn memoryStubUnmap(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.c) void
     memory_unmap_calls += 1;
 }
 
-fn memoryStubFlush(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
+fn memoryStubFlush(_: types.VkDevice, _: u32, _: *const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     memory_flush_calls += 1;
     return .SUCCESS;
 }
 
-fn memoryStubInvalidate(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
+fn memoryStubInvalidate(_: types.VkDevice, _: u32, _: *const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
@@ -573,10 +574,14 @@ fn stubCmdCopyBuffer(_: types.VkCommandBuffer, _: types.VkBuffer, _: types.VkBuf
     last_copy_region = regions.*;
 }
 
-fn stubQueueSubmit(_: types.VkQueue, submit_count: u32, submits: *const types.VkSubmitInfo, _: types.VkFence) callconv(.c) types.VkResult {
+fn stubQueueSubmit(_: types.VkQueue, submit_count: u32, submits_opt: ?[*]const types.VkSubmitInfo, _: ?types.VkFence) callconv(.c) types.VkResult {
     submit_calls += 1;
     std.debug.assert(submit_count == 1);
-    std.debug.assert(submits.*.commandBufferCount == 1);
+    const submits = submits_opt orelse {
+        std.debug.assert(submit_count == 0);
+        return .SUCCESS;
+    };
+    std.debug.assert(submits[0].commandBufferCount == 1);
     return .SUCCESS;
 }
 

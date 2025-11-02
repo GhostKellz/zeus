@@ -1,6 +1,6 @@
 # Zeus Vulkan Library - Development Roadmap
 
-**Status:** Phase 5 Complete � Moving to Phase 6 (Optimization & High Refresh Rate Polish)
+**Status:** Phase 6 Complete ✅ | Zig 0.16.0 Migration Complete ✅ | Moving to Phase 7 (Production Polish & Validation)
 
 **Target:** Production-ready Vulkan text rendering for Grim editor on NVIDIA + Wayland @ 144-360Hz
 
@@ -197,13 +197,13 @@
   - [x] Optional transfer queue submission path for atlas uploads (synchronous baseline)
   - [x] Prototype staging copies on transfer queue with timeline semaphores gating graphics usage (`TransferSubmission` timeline wiring exercised in tests ✅ Nov 2025)
   - [x] Defer atlas transitions until just before draw during encode step (graphics path only transitions when uploads pending ✅ Nov 2025)
-- [ ] NVIDIA-specific optimizations (see `REFERENCE_MATERIAL.md` §1)
+- [x] NVIDIA-specific optimizations (see `REFERENCE_MATERIAL.md` §1)
   - [x] ReBAR detection for large host-visible allocations (RTX 4090 optimization)
     - [x] `physical_device.Selection.hasReBAR()` helper with >256MB host-visible device-local threshold
     - [x] Scoped memory logs highlighting ReBAR vs staging strategies during allocations
-  - Memory allocation flags (device-local + host-visible preferred)
+  - [x] Memory allocation flags (device-local + host-visible preferred) - ReBAR-aware staging buffers in text_renderer.zig:605 + glyph_atlas.zig:210 ✅ Nov 2025
   - [x] Pipeline cache warming (precompile + serialize cache blobs after first run) (`pipeline_cache.PipelineCache.persist` + renderer test ✅ Nov 2025)
-  - Async compute queue usage (if beneficial)
+  - [x] Async compute queue usage evaluation - DEFERRED (see archive/async_compute_evaluation.md; prioritize CPU parallelism instead) ✅ Nov 2025
   - [x] DRM modesetting validation for 144-360Hz displays (`system_validation.logDrmHighRefresh` logging ✅ Nov 2025)
 
 ### CPU Optimization
