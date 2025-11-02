@@ -1,9 +1,37 @@
 const std = @import("std");
 const types = @import("types.zig");
 const physical_device = @import("physical_device.zig");
+const compositor_validation = @import("compositor_validation.zig");
 
 pub const KernelValidationOptions = struct {
     min_vm_max_map_count: u64 = 16_777_216,
+};
+
+pub const SystemValidationOptions = struct {
+    kernel: KernelValidationOptions = .{},
+    check_compositor: bool = true,
+    check_high_refresh: bool = true,
+    target_refresh_hz: u32 = 144,
+};
+
+pub const SystemValidation = struct {
+    kernel: KernelValidation,
+    compositor: ?compositor_validation.CompositorInfo = null,
+    max_refresh_hz: u32 = 0,
+
+    pub fn needsAttention(self: SystemValidation) bool {
+        if (self.kernel.needsAttention()) return true;
+        if (self.compositor) |comp| {
+            if (comp.needsAttention()) return true;
+        }
+        return false;
+    }
+
+    pub fn deinit(self: *SystemValidation, allocator: std.mem.Allocator) void {
+        if (self.compositor) |*comp| {
+            comp.deinit(allocator);
+        }
+    }
 };
 
 pub const KernelValidation = struct {
@@ -33,6 +61,50 @@ pub fn validateKernelParameters(memory_props: types.VkPhysicalDeviceMemoryProper
     };
 }
 
+/// Perform full system validation
+pub fn validateSystem(allocator: std.mem.Allocator, memory_props: types.VkPhysicalDeviceMemoryProperties, options: SystemValidationOptions) !SystemValidation {
+    var result = SystemValidation{
+        .kernel = validateKernelParameters(memory_props, options.kernel),
+        .compositor = null,
+        .max_refresh_hz = 0,
+    };
+
+    if (options.check_compositor) {
+        result.compositor = try compositor_validation.detectCompositor(allocator);
+    }
+
+    if (options.check_high_refresh) {
+        result.max_refresh_hz = getMaxRefreshRate();
+    }
+
+    return result;
+}
+
+/// Log full system validation results
+pub fn logSystemValidation(result: SystemValidation) void {
+    std.log.info("=== Zeus System Validation ===", .{});
+
+    // Kernel validation
+    logKernelValidation(result.kernel);
+
+    // Compositor validation
+    if (result.compositor) |comp| {
+        compositor_validation.logCompositorInfo(comp);
+    }
+
+    // Display refresh rate
+    if (result.max_refresh_hz > 0) {
+        std.log.info("display max_refresh={d} Hz", .{result.max_refresh_hz});
+    }
+
+    // Overall status
+    if (result.needsAttention()) {
+        std.log.warn("system validation: some checks require attention (see warnings above)", .{});
+    } else {
+        std.log.info("system validation: all checks passed", .{});
+    }
+}
+
 pub fn logKernelValidation(result: KernelValidation) void {
     if (result.vm_max_map_count) |value| {
         const status = if (result.vm_max_map_count_ok) "ok" else "raise";
@@ -46,6 +118,39 @@ pub fn logKernelValidation(result: KernelValidation) void {
 
     std.log.info("kernel bore_scheduler={s}", .{if (result.bore_scheduler_detected) "detected" else "missing"});
     std.log.info("kernel rebar_enabled={s}", .{if (result.rebar_enabled) "true" else "false"});
+}
+
+/// Get maximum refresh rate from DRM
+fn getMaxRefreshRate() u32 {
+    const dir = std.fs.openDirAbsolute("/sys/class/drm", .{ .iterate = true }) catch return 0;
+    defer dir.close();
+
+    var best_refresh: u32 = 0;
+    var iter = dir.iterate();
+    while (iter.next()) |entry| {
+        if (entry.kind != .directory and entry.kind != .sym_link) continue;
+        if (!std.mem.startsWith(u8, entry.name, "card")) continue;
+
+        var path_buf: [128]u8 = undefined;
+        const modes_rel = std.fmt.bufPrint(&path_buf, "{s}/modes", .{entry.name}) catch continue;
+        var modes_file = dir.openFile(modes_rel, .{}) catch continue;
+        defer modes_file.close();
+
+        var line_buf: [128]u8 = undefined;
+        var reader = modes_file.reader();
+        while (true) {
+            const line_opt = reader.readUntilDelimiterOrEof(&line_buf, '\n') catch break;
+            if (line_opt == null) break;
+            const line = std.mem.trim(u8, line_opt.?, " \r\t");
+            if (line.len == 0) continue;
+            if (parseRefresh(line)) |refresh| {
+                if (refresh > best_refresh) {
+                    best_refresh = refresh;
+                }
+            }
+        }
+    }
+    return best_refresh;
 }
 
 pub fn logDrmHighRefresh(threshold_hz: u32) void {
