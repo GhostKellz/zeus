@@ -95,7 +95,7 @@ pub const DebugMessenger = struct {
     destroy_fn: DestroyFn,
     allocator: ?*const types.VkAllocationCallbacks,
 
-    const DestroyFn = *const fn (types.VkInstance, types.VkDebugUtilsMessengerEXT, ?*const types.VkAllocationCallbacks) callconv(.C) void;
+    const DestroyFn = *const fn (types.VkInstance, types.VkDebugUtilsMessengerEXT, ?*const types.VkAllocationCallbacks) callconv(.c) void;
 
     pub fn init(instance: types.VkInstance, create_raw: types.PFN_vkVoidFunction, destroy_raw: types.PFN_vkVoidFunction, create_info: *const types.VkDebugUtilsMessengerCreateInfoEXT, allocator: ?*const types.VkAllocationCallbacks) Error!DebugMessenger {
         const create_fn = convertCreate(create_raw) orelse return BaseError.DebugMessengerUnavailable;

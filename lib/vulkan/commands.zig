@@ -171,7 +171,7 @@ test "beginRecording applies correct usage flags" {
             index = 0;
         }
 
-        pub fn begin(_: types.VkCommandBuffer, info: *const types.VkCommandBufferBeginInfo) callconv(.C) types.VkResult {
+        pub fn begin(_: types.VkCommandBuffer, info: *const types.VkCommandBufferBeginInfo) callconv(.c) types.VkResult {
             if (index < flags.len) {
                 flags[index] = info.flags;
             }

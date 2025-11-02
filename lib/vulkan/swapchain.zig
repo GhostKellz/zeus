@@ -334,7 +334,7 @@ const TestTimingCapture = struct {
         past_request_count = 0;
     }
 
-    pub fn queuePresent(_: types.VkQueue, info: *const types.VkPresentInfoKHR) callconv(.C) types.VkResult {
+    pub fn queuePresent(_: types.VkQueue, info: *const types.VkPresentInfoKHR) callconv(.c) types.VkResult {
         queue_present_calls += 1;
         if (info.pNext) |pnext| {
             const timing = @as(*const types.VkPresentTimesInfoGOOGLE, @ptrCast(pnext));
@@ -350,13 +350,13 @@ const TestTimingCapture = struct {
         return .SUCCESS;
     }
 
-    pub fn getRefresh(_: types.VkDevice, _: types.VkSwapchainKHR, duration: *types.VkRefreshCycleDurationGOOGLE) callconv(.C) types.VkResult {
+    pub fn getRefresh(_: types.VkDevice, _: types.VkSwapchainKHR, duration: *types.VkRefreshCycleDurationGOOGLE) callconv(.c) types.VkResult {
         refresh_calls += 1;
         duration.refreshDuration = refresh_value;
         return .SUCCESS;
     }
 
-    pub fn getPastTiming(_: types.VkDevice, _: types.VkSwapchainKHR, count: *u32, timings: ?[*]types.VkPastPresentationTimingGOOGLE) callconv(.C) types.VkResult {
+    pub fn getPastTiming(_: types.VkDevice, _: types.VkSwapchainKHR, count: *u32, timings: ?[*]types.VkPastPresentationTimingGOOGLE) callconv(.c) types.VkResult {
         past_calls += 1;
         if (timings) |ptr| {
             past_request_count = count.*;

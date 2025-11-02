@@ -699,17 +699,17 @@ fn makeMemoryProps() types.VkPhysicalDeviceMemoryProperties {
     return props;
 }
 
-fn stubCreateImage(_: types.VkDevice, _: *const types.VkImageCreateInfo, _: ?*const types.VkAllocationCallbacks, out_image: *types.VkImage) callconv(.C) types.VkResult {
+fn stubCreateImage(_: types.VkDevice, _: *const types.VkImageCreateInfo, _: ?*const types.VkAllocationCallbacks, out_image: *types.VkImage) callconv(.c) types.VkResult {
     TestCapture.create_image_calls += 1;
     out_image.* = fake_image_handle;
     return .SUCCESS;
 }
 
-fn stubDestroyImage(_: types.VkDevice, _: types.VkImage, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+fn stubDestroyImage(_: types.VkDevice, _: types.VkImage, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
     TestCapture.destroy_image_calls += 1;
 }
 
-fn stubImageRequirements(_: types.VkDevice, _: types.VkImage, reqs: *types.VkMemoryRequirements) callconv(.C) void {
+fn stubImageRequirements(_: types.VkDevice, _: types.VkImage, reqs: *types.VkMemoryRequirements) callconv(.c) void {
     reqs.* = types.VkMemoryRequirements{
         .size = 4096,
         .alignment = 256,
@@ -717,39 +717,39 @@ fn stubImageRequirements(_: types.VkDevice, _: types.VkImage, reqs: *types.VkMem
     };
 }
 
-fn stubBindImageMemory(_: types.VkDevice, _: types.VkImage, _: types.VkDeviceMemory, _: types.VkDeviceSize) callconv(.C) types.VkResult {
+fn stubBindImageMemory(_: types.VkDevice, _: types.VkImage, _: types.VkDeviceMemory, _: types.VkDeviceSize) callconv(.c) types.VkResult {
     TestCapture.bind_calls += 1;
     return .SUCCESS;
 }
 
-fn stubCreateImageView(_: types.VkDevice, _: *const types.VkImageViewCreateInfo, _: ?*const types.VkAllocationCallbacks, out_view: *types.VkImageView) callconv(.C) types.VkResult {
+fn stubCreateImageView(_: types.VkDevice, _: *const types.VkImageViewCreateInfo, _: ?*const types.VkAllocationCallbacks, out_view: *types.VkImageView) callconv(.c) types.VkResult {
     out_view.* = fake_image_view;
     return .SUCCESS;
 }
 
-fn stubDestroyImageView(_: types.VkDevice, _: types.VkImageView, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyImageView(_: types.VkDevice, _: types.VkImageView, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubCreateBuffer(_: types.VkDevice, _: *const types.VkBufferCreateInfo, _: ?*const types.VkAllocationCallbacks, out_buffer: *types.VkBuffer) callconv(.C) types.VkResult {
+fn stubCreateBuffer(_: types.VkDevice, _: *const types.VkBufferCreateInfo, _: ?*const types.VkAllocationCallbacks, out_buffer: *types.VkBuffer) callconv(.c) types.VkResult {
     TestCapture.create_buffer_calls += 1;
     out_buffer.* = fake_buffer_handle;
     return .SUCCESS;
 }
 
-fn stubDestroyBuffer(_: types.VkDevice, _: types.VkBuffer, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+fn stubDestroyBuffer(_: types.VkDevice, _: types.VkBuffer, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
     TestCapture.destroy_buffer_calls += 1;
 }
 
-fn stubCreateCommandPool(_: types.VkDevice, _: *const types.VkCommandPoolCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pool: *types.VkCommandPool) callconv(.C) types.VkResult {
+fn stubCreateCommandPool(_: types.VkDevice, _: *const types.VkCommandPoolCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pool: *types.VkCommandPool) callconv(.c) types.VkResult {
     TestCapture.command_pool_create_calls += 1;
     out_pool.* = fake_command_pool;
     return .SUCCESS;
 }
 
-fn stubDestroyCommandPool(_: types.VkDevice, _: types.VkCommandPool, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+fn stubDestroyCommandPool(_: types.VkDevice, _: types.VkCommandPool, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
     TestCapture.command_pool_destroy_calls += 1;
 }
 
-fn stubAllocateCommandBuffers(_: types.VkDevice, info: *const types.VkCommandBufferAllocateInfo, buffers: [*]types.VkCommandBuffer) callconv(.C) types.VkResult {
+fn stubAllocateCommandBuffers(_: types.VkDevice, info: *const types.VkCommandBufferAllocateInfo, buffers: [*]types.VkCommandBuffer) callconv(.c) types.VkResult {
     TestCapture.command_buffer_alloc_calls += 1;
     var i: usize = 0;
     while (i < info.commandBufferCount) : (i += 1) {
@@ -758,19 +758,19 @@ fn stubAllocateCommandBuffers(_: types.VkDevice, info: *const types.VkCommandBuf
     return .SUCCESS;
 }
 
-fn stubFreeCommandBuffers(_: types.VkDevice, _: types.VkCommandPool, count: u32, _: [*]const types.VkCommandBuffer) callconv(.C) void {
+fn stubFreeCommandBuffers(_: types.VkDevice, _: types.VkCommandPool, count: u32, _: [*]const types.VkCommandBuffer) callconv(.c) void {
     if (count > 0) TestCapture.command_buffer_free_calls += 1;
 }
 
-fn stubBeginCommandBuffer(_: types.VkCommandBuffer, _: *const types.VkCommandBufferBeginInfo) callconv(.C) types.VkResult {
+fn stubBeginCommandBuffer(_: types.VkCommandBuffer, _: *const types.VkCommandBufferBeginInfo) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubEndCommandBuffer(_: types.VkCommandBuffer) callconv(.C) types.VkResult {
+fn stubEndCommandBuffer(_: types.VkCommandBuffer) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubQueueSubmit(queue: types.VkQueue, submit_count: u32, infos: [*]const types.VkSubmitInfo, _: types.VkFence) callconv(.C) types.VkResult {
+fn stubQueueSubmit(queue: types.VkQueue, submit_count: u32, infos: [*]const types.VkSubmitInfo, _: types.VkFence) callconv(.c) types.VkResult {
     TestCapture.queue_submit_calls += @intCast(submit_count);
     if (submit_count > 0) {
         const info = infos[0];
@@ -794,13 +794,13 @@ fn stubQueueSubmit(queue: types.VkQueue, submit_count: u32, infos: [*]const type
     return .SUCCESS;
 }
 
-fn stubQueueWaitIdle(queue: types.VkQueue) callconv(.C) types.VkResult {
+fn stubQueueWaitIdle(queue: types.VkQueue) callconv(.c) types.VkResult {
     TestCapture.queue_wait_idle_calls += 1;
     TestCapture.last_queue = queue;
     return .SUCCESS;
 }
 
-fn stubBufferRequirements(_: types.VkDevice, _: types.VkBuffer, reqs: *types.VkMemoryRequirements) callconv(.C) void {
+fn stubBufferRequirements(_: types.VkDevice, _: types.VkBuffer, reqs: *types.VkMemoryRequirements) callconv(.c) void {
     reqs.* = types.VkMemoryRequirements{
         .size = 256,
         .alignment = 64,
@@ -808,41 +808,41 @@ fn stubBufferRequirements(_: types.VkDevice, _: types.VkBuffer, reqs: *types.VkM
     };
 }
 
-fn stubBindBufferMemory(_: types.VkDevice, _: types.VkBuffer, _: types.VkDeviceMemory, _: types.VkDeviceSize) callconv(.C) types.VkResult {
+fn stubBindBufferMemory(_: types.VkDevice, _: types.VkBuffer, _: types.VkDeviceMemory, _: types.VkDeviceSize) callconv(.c) types.VkResult {
     TestCapture.bind_calls += 1;
     return .SUCCESS;
 }
 
-fn stubAllocateMemory(_: types.VkDevice, _: *const types.VkMemoryAllocateInfo, _: ?*const types.VkAllocationCallbacks, out_memory: *types.VkDeviceMemory) callconv(.C) types.VkResult {
+fn stubAllocateMemory(_: types.VkDevice, _: *const types.VkMemoryAllocateInfo, _: ?*const types.VkAllocationCallbacks, out_memory: *types.VkDeviceMemory) callconv(.c) types.VkResult {
     out_memory.* = fake_memory_handle;
     return .SUCCESS;
 }
 
-fn stubFreeMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubFreeMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubMapMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: types.VkDeviceSize, _: types.VkDeviceSize, _: types.VkMemoryMapFlags, data: *?*anyopaque) callconv(.C) types.VkResult {
+fn stubMapMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: types.VkDeviceSize, _: types.VkDeviceSize, _: types.VkMemoryMapFlags, data: *?*anyopaque) callconv(.c) types.VkResult {
     data.* = @as(*anyopaque, @ptrCast(&TestCapture.mapped_storage));
     return .SUCCESS;
 }
 
-fn stubUnmapMemory(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.C) void {}
+fn stubUnmapMemory(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.c) void {}
 
-fn stubFlushMemory(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.C) types.VkResult {
+fn stubFlushMemory(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubInvalidateMemory(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.C) types.VkResult {
+fn stubInvalidateMemory(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubCopyBufferToImage(_: types.VkCommandBuffer, _: types.VkBuffer, _: types.VkImage, _: types.VkImageLayout, _: u32, regions: ?[*]const types.VkBufferImageCopy) callconv(.C) void {
+fn stubCopyBufferToImage(_: types.VkCommandBuffer, _: types.VkBuffer, _: types.VkImage, _: types.VkImageLayout, _: u32, regions: ?[*]const types.VkBufferImageCopy) callconv(.c) void {
     TestCapture.copy_calls += 1;
     if (regions) |ptr| {
         TestCapture.last_copy = ptr[0];
     }
 }
 
-fn stubPipelineBarrier(_: types.VkCommandBuffer, _: types.VkPipelineStageFlags, _: types.VkPipelineStageFlags, _: types.VkDependencyFlags, _: u32, _: ?[*]const types.VkMemoryBarrier, _: u32, _: ?[*]const types.VkBufferMemoryBarrier, count: u32, barriers: ?[*]const types.VkImageMemoryBarrier) callconv(.C) void {
+fn stubPipelineBarrier(_: types.VkCommandBuffer, _: types.VkPipelineStageFlags, _: types.VkPipelineStageFlags, _: types.VkDependencyFlags, _: u32, _: ?[*]const types.VkMemoryBarrier, _: u32, _: ?[*]const types.VkBufferMemoryBarrier, count: u32, barriers: ?[*]const types.VkImageMemoryBarrier) callconv(.c) void {
     TestCapture.barrier_calls += 1;
     if (count > 0 and barriers != null) {
         TestCapture.last_barrier = barriers.?[0];

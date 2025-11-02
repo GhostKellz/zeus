@@ -63,13 +63,13 @@ const Capture = struct {
         destroy_calls = 0;
     }
 
-    pub fn stubCreateModule(_: types.VkDevice, info: *const types.VkShaderModuleCreateInfo, _: ?*const types.VkAllocationCallbacks, module: *types.VkShaderModule) callconv(.C) types.VkResult {
+    pub fn stubCreateModule(_: types.VkDevice, info: *const types.VkShaderModuleCreateInfo, _: ?*const types.VkAllocationCallbacks, module: *types.VkShaderModule) callconv(.c) types.VkResult {
         create_info = info.*;
         module.* = fake_module;
         return .SUCCESS;
     }
 
-    pub fn stubDestroyModule(_: types.VkDevice, _: types.VkShaderModule, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+    pub fn stubDestroyModule(_: types.VkDevice, _: types.VkShaderModule, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
         destroy_calls += 1;
     }
 };

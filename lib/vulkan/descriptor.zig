@@ -274,27 +274,27 @@ const Capture = struct {
         update_calls = 0;
     }
 
-    pub fn stubCreatePool(_: types.VkDevice, info: *const types.VkDescriptorPoolCreateInfo, _: ?*const types.VkAllocationCallbacks, pool: *types.VkDescriptorPool) callconv(.C) types.VkResult {
+    pub fn stubCreatePool(_: types.VkDevice, info: *const types.VkDescriptorPoolCreateInfo, _: ?*const types.VkAllocationCallbacks, pool: *types.VkDescriptorPool) callconv(.c) types.VkResult {
         pool_info = info.*;
         pool.* = fake_pool;
         return .SUCCESS;
     }
 
-    pub fn stubDestroyPool(_: types.VkDevice, _: types.VkDescriptorPool, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+    pub fn stubDestroyPool(_: types.VkDevice, _: types.VkDescriptorPool, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
         destroy_pool_calls += 1;
     }
 
-    pub fn stubCreateLayout(_: types.VkDevice, info: *const types.VkDescriptorSetLayoutCreateInfo, _: ?*const types.VkAllocationCallbacks, layout: *types.VkDescriptorSetLayout) callconv(.C) types.VkResult {
+    pub fn stubCreateLayout(_: types.VkDevice, info: *const types.VkDescriptorSetLayoutCreateInfo, _: ?*const types.VkAllocationCallbacks, layout: *types.VkDescriptorSetLayout) callconv(.c) types.VkResult {
         layout_info = info.*;
         layout.* = fake_layout;
         return .SUCCESS;
     }
 
-    pub fn stubDestroyLayout(_: types.VkDevice, _: types.VkDescriptorSetLayout, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+    pub fn stubDestroyLayout(_: types.VkDevice, _: types.VkDescriptorSetLayout, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
         destroy_layout_calls += 1;
     }
 
-    pub fn stubAllocate(_: types.VkDevice, info: *const types.VkDescriptorSetAllocateInfo, sets: [*]types.VkDescriptorSet) callconv(.C) types.VkResult {
+    pub fn stubAllocate(_: types.VkDevice, info: *const types.VkDescriptorSetAllocateInfo, sets: [*]types.VkDescriptorSet) callconv(.c) types.VkResult {
         allocate_info = info.*;
         for (fake_set_handles, 0..) |handle, idx| {
             if (idx >= info.descriptorSetCount) break;
@@ -303,13 +303,13 @@ const Capture = struct {
         return .SUCCESS;
     }
 
-    pub fn stubFree(_: types.VkDevice, _: types.VkDescriptorPool, count: u32, _: [*]const types.VkDescriptorSet) callconv(.C) types.VkResult {
+    pub fn stubFree(_: types.VkDevice, _: types.VkDescriptorPool, count: u32, _: [*]const types.VkDescriptorSet) callconv(.c) types.VkResult {
         free_calls += 1;
         std.debug.assert(count > 0);
         return .SUCCESS;
     }
 
-    pub fn stubUpdate(_: types.VkDevice, write_count: u32, writes: ?[*]const types.VkWriteDescriptorSet, copy_count: u32, copies: ?[*]const types.VkCopyDescriptorSet) callconv(.C) void {
+    pub fn stubUpdate(_: types.VkDevice, write_count: u32, writes: ?[*]const types.VkWriteDescriptorSet, copy_count: u32, copies: ?[*]const types.VkCopyDescriptorSet) callconv(.c) void {
         update_calls += 1;
         if (write_count > 0 and writes) |ptr| {
             last_writes = ptr[0..write_count];

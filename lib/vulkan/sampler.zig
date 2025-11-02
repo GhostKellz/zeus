@@ -79,13 +79,13 @@ const Capture = struct {
         destroy_calls = 0;
     }
 
-    pub fn stubCreate(_: types.VkDevice, info: *const types.VkSamplerCreateInfo, _: ?*const types.VkAllocationCallbacks, sampler: *types.VkSampler) callconv(.C) types.VkResult {
+    pub fn stubCreate(_: types.VkDevice, info: *const types.VkSamplerCreateInfo, _: ?*const types.VkAllocationCallbacks, sampler: *types.VkSampler) callconv(.c) types.VkResult {
         create_info = info.*;
         sampler.* = fake_sampler;
         return .SUCCESS;
     }
 
-    pub fn stubDestroy(_: types.VkDevice, _: types.VkSampler, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+    pub fn stubDestroy(_: types.VkDevice, _: types.VkSampler, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
         destroy_calls += 1;
     }
 };

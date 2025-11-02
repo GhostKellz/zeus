@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const types = @import("types.zig");
 const vk_errors = @import("error.zig");
 
@@ -38,7 +39,7 @@ pub const Loader = struct {
     }
 
     pub fn defaultSearchPaths() []const [:0]const u8 {
-        return switch (std.Target.current.os.tag) {
+        return switch (builtin.target.os.tag) {
             .windows => &.{"vulkan-1.dll"},
             .macos => &.{ "libvulkan.dylib", "libMoltenVK.dylib" },
             else => &.{ "libvulkan.so.1", "libvulkan.so" },
@@ -166,6 +167,9 @@ pub const DeviceDispatch = struct {
     bind_image_memory: types.PFN_vkBindImageMemory,
     create_image_view: types.PFN_vkCreateImageView,
     destroy_image_view: types.PFN_vkDestroyImageView,
+    create_pipeline_cache: types.PFN_vkCreatePipelineCache,
+    destroy_pipeline_cache: types.PFN_vkDestroyPipelineCache,
+    get_pipeline_cache_data: types.PFN_vkGetPipelineCacheData,
     cmd_pipeline_barrier: types.PFN_vkCmdPipelineBarrier,
     cmd_copy_buffer: types.PFN_vkCmdCopyBuffer,
     cmd_copy_buffer_to_image: types.PFN_vkCmdCopyBufferToImage,
@@ -226,6 +230,9 @@ pub const DeviceDispatch = struct {
             .bind_image_memory = try loadDeviceProc(types.PFN_vkBindImageMemory, proc, device, "vkBindImageMemory"),
             .create_image_view = try loadDeviceProc(types.PFN_vkCreateImageView, proc, device, "vkCreateImageView"),
             .destroy_image_view = try loadDeviceProc(types.PFN_vkDestroyImageView, proc, device, "vkDestroyImageView"),
+            .create_pipeline_cache = try loadDeviceProc(types.PFN_vkCreatePipelineCache, proc, device, "vkCreatePipelineCache"),
+            .destroy_pipeline_cache = try loadDeviceProc(types.PFN_vkDestroyPipelineCache, proc, device, "vkDestroyPipelineCache"),
+            .get_pipeline_cache_data = try loadDeviceProc(types.PFN_vkGetPipelineCacheData, proc, device, "vkGetPipelineCacheData"),
             .cmd_pipeline_barrier = try loadDeviceProc(types.PFN_vkCmdPipelineBarrier, proc, device, "vkCmdPipelineBarrier"),
             .cmd_copy_buffer = try loadDeviceProc(types.PFN_vkCmdCopyBuffer, proc, device, "vkCmdCopyBuffer"),
             .cmd_copy_buffer_to_image = try loadDeviceProc(types.PFN_vkCmdCopyBufferToImage, proc, device, "vkCmdCopyBufferToImage"),

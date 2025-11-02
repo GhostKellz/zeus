@@ -227,13 +227,13 @@ const LayoutCapture = struct {
         destroy_calls = 0;
     }
 
-    pub fn stubCreate(_: types.VkDevice, info: *const types.VkPipelineLayoutCreateInfo, _: ?*const types.VkAllocationCallbacks, layout: *types.VkPipelineLayout) callconv(.C) types.VkResult {
+    pub fn stubCreate(_: types.VkDevice, info: *const types.VkPipelineLayoutCreateInfo, _: ?*const types.VkAllocationCallbacks, layout: *types.VkPipelineLayout) callconv(.c) types.VkResult {
         layout_info = info.*;
         layout.* = fake_layout;
         return .SUCCESS;
     }
 
-    pub fn stubDestroy(_: types.VkDevice, _: types.VkPipelineLayout, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+    pub fn stubDestroy(_: types.VkDevice, _: types.VkPipelineLayout, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
         destroy_calls += 1;
     }
 };
@@ -313,7 +313,7 @@ const PipelineCapture = struct {
         destroy_calls = 0;
     }
 
-    pub fn stubCreate(_: types.VkDevice, _: types.VkPipelineCache, count: u32, infos: [*]const types.VkGraphicsPipelineCreateInfo, _: ?*const types.VkAllocationCallbacks, pipelines: [*]types.VkPipeline) callconv(.C) types.VkResult {
+    pub fn stubCreate(_: types.VkDevice, _: types.VkPipelineCache, count: u32, infos: [*]const types.VkGraphicsPipelineCreateInfo, _: ?*const types.VkAllocationCallbacks, pipelines: [*]types.VkPipeline) callconv(.c) types.VkResult {
         std.debug.assert(count == 1);
         const info = infos[0];
         create_info = info;
@@ -353,7 +353,7 @@ const PipelineCapture = struct {
         return .SUCCESS;
     }
 
-    pub fn stubDestroy(_: types.VkDevice, _: types.VkPipeline, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+    pub fn stubDestroy(_: types.VkDevice, _: types.VkPipeline, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
         destroy_calls += 1;
     }
 };

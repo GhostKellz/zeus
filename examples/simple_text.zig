@@ -97,35 +97,35 @@ fn setupMockDispatch(device: *device_mod.Device) void {
     device.dispatch.end_command_buffer = stubEndCommandBuffer;
 }
 
-fn stubDestroyDevice(_: types.VkDevice, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyDevice(_: types.VkDevice, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubGetDeviceQueue(_: types.VkDevice, _: u32, _: u32, out_queue: *types.VkQueue) callconv(.C) void {
+fn stubGetDeviceQueue(_: types.VkDevice, _: u32, _: u32, out_queue: *types.VkQueue) callconv(.c) void {
     out_queue.* = fake_queue;
 }
 
-fn stubQueueSubmit(_: types.VkQueue, _: u32, _: ?[*]const types.VkSubmitInfo, _: types.VkFence) callconv(.C) types.VkResult {
+fn stubQueueSubmit(_: types.VkQueue, _: u32, _: ?[*]const types.VkSubmitInfo, _: types.VkFence) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubQueueWaitIdle(_: types.VkQueue) callconv(.C) types.VkResult {
+fn stubQueueWaitIdle(_: types.VkQueue) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubCreateDescriptorSetLayout(_: types.VkDevice, _: *const types.VkDescriptorSetLayoutCreateInfo, _: ?*const types.VkAllocationCallbacks, out_layout: *types.VkDescriptorSetLayout) callconv(.C) types.VkResult {
+fn stubCreateDescriptorSetLayout(_: types.VkDevice, _: *const types.VkDescriptorSetLayoutCreateInfo, _: ?*const types.VkAllocationCallbacks, out_layout: *types.VkDescriptorSetLayout) callconv(.c) types.VkResult {
     out_layout.* = makeHandle(types.VkDescriptorSetLayout);
     return .SUCCESS;
 }
 
-fn stubDestroyDescriptorSetLayout(_: types.VkDevice, _: types.VkDescriptorSetLayout, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyDescriptorSetLayout(_: types.VkDevice, _: types.VkDescriptorSetLayout, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubCreateDescriptorPool(_: types.VkDevice, _: *const types.VkDescriptorPoolCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pool: *types.VkDescriptorPool) callconv(.C) types.VkResult {
+fn stubCreateDescriptorPool(_: types.VkDevice, _: *const types.VkDescriptorPoolCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pool: *types.VkDescriptorPool) callconv(.c) types.VkResult {
     out_pool.* = makeHandle(types.VkDescriptorPool);
     return .SUCCESS;
 }
 
-fn stubDestroyDescriptorPool(_: types.VkDevice, _: types.VkDescriptorPool, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyDescriptorPool(_: types.VkDevice, _: types.VkDescriptorPool, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubAllocateDescriptorSets(_: types.VkDevice, info: *const types.VkDescriptorSetAllocateInfo, sets: [*]types.VkDescriptorSet) callconv(.C) types.VkResult {
+fn stubAllocateDescriptorSets(_: types.VkDevice, info: *const types.VkDescriptorSetAllocateInfo, sets: [*]types.VkDescriptorSet) callconv(.c) types.VkResult {
     const count: usize = @intCast(info.descriptorSetCount);
     var i: usize = 0;
     while (i < count) : (i += 1) {
@@ -134,57 +134,57 @@ fn stubAllocateDescriptorSets(_: types.VkDevice, info: *const types.VkDescriptor
     return .SUCCESS;
 }
 
-fn stubFreeDescriptorSets(_: types.VkDevice, _: types.VkDescriptorPool, _: u32, _: [*]const types.VkDescriptorSet) callconv(.C) types.VkResult {
+fn stubFreeDescriptorSets(_: types.VkDevice, _: types.VkDescriptorPool, _: u32, _: [*]const types.VkDescriptorSet) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubUpdateDescriptorSets(_: types.VkDevice, _: u32, _: ?[*]const types.VkWriteDescriptorSet, _: u32, _: ?[*]const types.VkCopyDescriptorSet) callconv(.C) void {}
+fn stubUpdateDescriptorSets(_: types.VkDevice, _: u32, _: ?[*]const types.VkWriteDescriptorSet, _: u32, _: ?[*]const types.VkCopyDescriptorSet) callconv(.c) void {}
 
-fn stubCreatePipelineLayout(_: types.VkDevice, _: *const types.VkPipelineLayoutCreateInfo, _: ?*const types.VkAllocationCallbacks, out_layout: *types.VkPipelineLayout) callconv(.C) types.VkResult {
+fn stubCreatePipelineLayout(_: types.VkDevice, _: *const types.VkPipelineLayoutCreateInfo, _: ?*const types.VkAllocationCallbacks, out_layout: *types.VkPipelineLayout) callconv(.c) types.VkResult {
     out_layout.* = makeHandle(types.VkPipelineLayout);
     return .SUCCESS;
 }
 
-fn stubDestroyPipelineLayout(_: types.VkDevice, _: types.VkPipelineLayout, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyPipelineLayout(_: types.VkDevice, _: types.VkPipelineLayout, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubCreateRenderPass(_: types.VkDevice, _: *const types.VkRenderPassCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pass: *types.VkRenderPass) callconv(.C) types.VkResult {
+fn stubCreateRenderPass(_: types.VkDevice, _: *const types.VkRenderPassCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pass: *types.VkRenderPass) callconv(.c) types.VkResult {
     out_pass.* = makeHandle(types.VkRenderPass);
     return .SUCCESS;
 }
 
-fn stubDestroyRenderPass(_: types.VkDevice, _: types.VkRenderPass, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyRenderPass(_: types.VkDevice, _: types.VkRenderPass, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubCreateShaderModule(_: types.VkDevice, info: *const types.VkShaderModuleCreateInfo, _: ?*const types.VkAllocationCallbacks, out_module: *types.VkShaderModule) callconv(.C) types.VkResult {
+fn stubCreateShaderModule(_: types.VkDevice, info: *const types.VkShaderModuleCreateInfo, _: ?*const types.VkAllocationCallbacks, out_module: *types.VkShaderModule) callconv(.c) types.VkResult {
     std.debug.assert(info.codeSize > 0);
     out_module.* = makeHandle(types.VkShaderModule);
     return .SUCCESS;
 }
 
-fn stubDestroyShaderModule(_: types.VkDevice, _: types.VkShaderModule, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyShaderModule(_: types.VkDevice, _: types.VkShaderModule, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubCreateGraphicsPipelines(_: types.VkDevice, _: types.VkPipelineCache, count: u32, _: [*]const types.VkGraphicsPipelineCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pipelines: [*]types.VkPipeline) callconv(.C) types.VkResult {
+fn stubCreateGraphicsPipelines(_: types.VkDevice, _: types.VkPipelineCache, count: u32, _: [*]const types.VkGraphicsPipelineCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pipelines: [*]types.VkPipeline) callconv(.c) types.VkResult {
     std.debug.assert(count == 1);
     out_pipelines[0] = makeHandle(types.VkPipeline);
     return .SUCCESS;
 }
 
-fn stubDestroyPipeline(_: types.VkDevice, _: types.VkPipeline, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyPipeline(_: types.VkDevice, _: types.VkPipeline, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubCreateSampler(_: types.VkDevice, _: *const types.VkSamplerCreateInfo, _: ?*const types.VkAllocationCallbacks, out_sampler: *types.VkSampler) callconv(.C) types.VkResult {
+fn stubCreateSampler(_: types.VkDevice, _: *const types.VkSamplerCreateInfo, _: ?*const types.VkAllocationCallbacks, out_sampler: *types.VkSampler) callconv(.c) types.VkResult {
     out_sampler.* = makeHandle(types.VkSampler);
     return .SUCCESS;
 }
 
-fn stubDestroySampler(_: types.VkDevice, _: types.VkSampler, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroySampler(_: types.VkDevice, _: types.VkSampler, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubCreateImage(_: types.VkDevice, _: *const types.VkImageCreateInfo, _: ?*const types.VkAllocationCallbacks, out_image: *types.VkImage) callconv(.C) types.VkResult {
+fn stubCreateImage(_: types.VkDevice, _: *const types.VkImageCreateInfo, _: ?*const types.VkAllocationCallbacks, out_image: *types.VkImage) callconv(.c) types.VkResult {
     out_image.* = makeHandle(types.VkImage);
     return .SUCCESS;
 }
 
-fn stubDestroyImage(_: types.VkDevice, _: types.VkImage, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyImage(_: types.VkDevice, _: types.VkImage, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubImageRequirements(_: types.VkDevice, _: types.VkImage, requirements: *types.VkMemoryRequirements) callconv(.C) void {
+fn stubImageRequirements(_: types.VkDevice, _: types.VkImage, requirements: *types.VkMemoryRequirements) callconv(.c) void {
     requirements.* = types.VkMemoryRequirements{
         .size = 4096,
         .alignment = 256,
@@ -192,26 +192,26 @@ fn stubImageRequirements(_: types.VkDevice, _: types.VkImage, requirements: *typ
     };
 }
 
-fn stubBindImageMemory(_: types.VkDevice, _: types.VkImage, _: types.VkDeviceMemory, _: types.VkDeviceSize) callconv(.C) types.VkResult {
+fn stubBindImageMemory(_: types.VkDevice, _: types.VkImage, _: types.VkDeviceMemory, _: types.VkDeviceSize) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubCreateImageView(_: types.VkDevice, _: *const types.VkImageViewCreateInfo, _: ?*const types.VkAllocationCallbacks, out_view: *types.VkImageView) callconv(.C) types.VkResult {
+fn stubCreateImageView(_: types.VkDevice, _: *const types.VkImageViewCreateInfo, _: ?*const types.VkAllocationCallbacks, out_view: *types.VkImageView) callconv(.c) types.VkResult {
     out_view.* = makeHandle(types.VkImageView);
     return .SUCCESS;
 }
 
-fn stubDestroyImageView(_: types.VkDevice, _: types.VkImageView, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyImageView(_: types.VkDevice, _: types.VkImageView, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubCreateBuffer(_: types.VkDevice, info: *const types.VkBufferCreateInfo, _: ?*const types.VkAllocationCallbacks, out_buffer: *types.VkBuffer) callconv(.C) types.VkResult {
+fn stubCreateBuffer(_: types.VkDevice, info: *const types.VkBufferCreateInfo, _: ?*const types.VkAllocationCallbacks, out_buffer: *types.VkBuffer) callconv(.c) types.VkResult {
     std.debug.assert(info.size > 0);
     out_buffer.* = makeHandle(types.VkBuffer);
     return .SUCCESS;
 }
 
-fn stubDestroyBuffer(_: types.VkDevice, _: types.VkBuffer, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyBuffer(_: types.VkDevice, _: types.VkBuffer, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubBufferRequirements(_: types.VkDevice, _: types.VkBuffer, requirements: *types.VkMemoryRequirements) callconv(.C) void {
+fn stubBufferRequirements(_: types.VkDevice, _: types.VkBuffer, requirements: *types.VkMemoryRequirements) callconv(.c) void {
     requirements.* = types.VkMemoryRequirements{
         .size = 2048,
         .alignment = 256,
@@ -219,51 +219,51 @@ fn stubBufferRequirements(_: types.VkDevice, _: types.VkBuffer, requirements: *t
     };
 }
 
-fn stubBindBufferMemory(_: types.VkDevice, _: types.VkBuffer, _: types.VkDeviceMemory, _: types.VkDeviceSize) callconv(.C) types.VkResult {
+fn stubBindBufferMemory(_: types.VkDevice, _: types.VkBuffer, _: types.VkDeviceMemory, _: types.VkDeviceSize) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubAllocateMemory(_: types.VkDevice, info: *const types.VkMemoryAllocateInfo, _: ?*const types.VkAllocationCallbacks, out_memory: *types.VkDeviceMemory) callconv(.C) types.VkResult {
+fn stubAllocateMemory(_: types.VkDevice, info: *const types.VkMemoryAllocateInfo, _: ?*const types.VkAllocationCallbacks, out_memory: *types.VkDeviceMemory) callconv(.c) types.VkResult {
     out_memory.* = @as(types.VkDeviceMemory, @ptrFromInt(@as(usize, info.allocationSize) + 0xCAFE));
     return .SUCCESS;
 }
 
-fn stubFreeMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubFreeMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubMapMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: types.VkDeviceSize, _: types.VkDeviceSize, _: types.VkMemoryMapFlags, data: *?*anyopaque) callconv(.C) types.VkResult {
+fn stubMapMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: types.VkDeviceSize, _: types.VkDeviceSize, _: types.VkMemoryMapFlags, data: *?*anyopaque) callconv(.c) types.VkResult {
     data.* = @as(*anyopaque, @ptrCast(mapped_storage[0..].ptr));
     return .SUCCESS;
 }
 
-fn stubUnmapMemory(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.C) void {}
+fn stubUnmapMemory(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.c) void {}
 
-fn stubFlushMappedMemoryRanges(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.C) types.VkResult {
+fn stubFlushMappedMemoryRanges(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubInvalidateMappedMemoryRanges(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.C) types.VkResult {
+fn stubInvalidateMappedMemoryRanges(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubCreateFramebuffer(_: types.VkDevice, _: *const types.VkFramebufferCreateInfo, _: ?*const types.VkAllocationCallbacks, out_framebuffer: *types.VkFramebuffer) callconv(.C) types.VkResult {
+fn stubCreateFramebuffer(_: types.VkDevice, _: *const types.VkFramebufferCreateInfo, _: ?*const types.VkAllocationCallbacks, out_framebuffer: *types.VkFramebuffer) callconv(.c) types.VkResult {
     out_framebuffer.* = makeHandle(types.VkFramebuffer);
     return .SUCCESS;
 }
 
-fn stubDestroyFramebuffer(_: types.VkDevice, _: types.VkFramebuffer, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyFramebuffer(_: types.VkDevice, _: types.VkFramebuffer, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubCreateCommandPool(_: types.VkDevice, _: *const types.VkCommandPoolCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pool: *types.VkCommandPool) callconv(.C) types.VkResult {
+fn stubCreateCommandPool(_: types.VkDevice, _: *const types.VkCommandPoolCreateInfo, _: ?*const types.VkAllocationCallbacks, out_pool: *types.VkCommandPool) callconv(.c) types.VkResult {
     out_pool.* = makeHandle(types.VkCommandPool);
     return .SUCCESS;
 }
 
-fn stubDestroyCommandPool(_: types.VkDevice, _: types.VkCommandPool, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyCommandPool(_: types.VkDevice, _: types.VkCommandPool, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubResetCommandPool(_: types.VkDevice, _: types.VkCommandPool, _: types.VkCommandPoolResetFlags) callconv(.C) types.VkResult {
+fn stubResetCommandPool(_: types.VkDevice, _: types.VkCommandPool, _: types.VkCommandPoolResetFlags) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubAllocateCommandBuffers(_: types.VkDevice, info: *const types.VkCommandBufferAllocateInfo, buffers: [*]types.VkCommandBuffer) callconv(.C) types.VkResult {
+fn stubAllocateCommandBuffers(_: types.VkDevice, info: *const types.VkCommandBufferAllocateInfo, buffers: [*]types.VkCommandBuffer) callconv(.c) types.VkResult {
     const count: usize = @intCast(info.commandBufferCount);
     var i: usize = 0;
     while (i < count) : (i += 1) {
@@ -272,69 +272,69 @@ fn stubAllocateCommandBuffers(_: types.VkDevice, info: *const types.VkCommandBuf
     return .SUCCESS;
 }
 
-fn stubFreeCommandBuffers(_: types.VkDevice, _: types.VkCommandPool, _: u32, _: [*]const types.VkCommandBuffer) callconv(.C) void {}
+fn stubFreeCommandBuffers(_: types.VkDevice, _: types.VkCommandPool, _: u32, _: [*]const types.VkCommandBuffer) callconv(.c) void {}
 
-fn stubCreateFence(_: types.VkDevice, _: *const types.VkFenceCreateInfo, _: ?*const types.VkAllocationCallbacks, out_fence: *types.VkFence) callconv(.C) types.VkResult {
+fn stubCreateFence(_: types.VkDevice, _: *const types.VkFenceCreateInfo, _: ?*const types.VkAllocationCallbacks, out_fence: *types.VkFence) callconv(.c) types.VkResult {
     out_fence.* = makeHandle(types.VkFence);
     return .SUCCESS;
 }
 
-fn stubDestroyFence(_: types.VkDevice, _: types.VkFence, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroyFence(_: types.VkDevice, _: types.VkFence, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubResetFences(_: types.VkDevice, _: u32, _: *const types.VkFence) callconv(.C) types.VkResult {
+fn stubResetFences(_: types.VkDevice, _: u32, _: *const types.VkFence) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubWaitForFences(_: types.VkDevice, _: u32, _: *const types.VkFence, _: types.VkBool32, _: u64) callconv(.C) types.VkResult {
+fn stubWaitForFences(_: types.VkDevice, _: u32, _: *const types.VkFence, _: types.VkBool32, _: u64) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubGetFenceStatus(_: types.VkDevice, _: types.VkFence) callconv(.C) types.VkResult {
+fn stubGetFenceStatus(_: types.VkDevice, _: types.VkFence) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubCreateSemaphore(_: types.VkDevice, _: *const types.VkSemaphoreCreateInfo, _: ?*const types.VkAllocationCallbacks, out_semaphore: *types.VkSemaphore) callconv(.C) types.VkResult {
+fn stubCreateSemaphore(_: types.VkDevice, _: *const types.VkSemaphoreCreateInfo, _: ?*const types.VkAllocationCallbacks, out_semaphore: *types.VkSemaphore) callconv(.c) types.VkResult {
     out_semaphore.* = makeHandle(types.VkSemaphore);
     return .SUCCESS;
 }
 
-fn stubDestroySemaphore(_: types.VkDevice, _: types.VkSemaphore, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {}
+fn stubDestroySemaphore(_: types.VkDevice, _: types.VkSemaphore, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {}
 
-fn stubWaitSemaphores(_: types.VkDevice, _: *const types.VkSemaphoreWaitInfo, _: u64) callconv(.C) types.VkResult {
+fn stubWaitSemaphores(_: types.VkDevice, _: *const types.VkSemaphoreWaitInfo, _: u64) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubSignalSemaphore(_: types.VkDevice, _: *const types.VkSemaphoreSignalInfo) callconv(.C) types.VkResult {
+fn stubSignalSemaphore(_: types.VkDevice, _: *const types.VkSemaphoreSignalInfo) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubCmdBindPipeline(_: types.VkCommandBuffer, _: types.VkPipelineBindPoint, _: types.VkPipeline) callconv(.C) void {}
+fn stubCmdBindPipeline(_: types.VkCommandBuffer, _: types.VkPipelineBindPoint, _: types.VkPipeline) callconv(.c) void {}
 
-fn stubCmdBindDescriptorSets(_: types.VkCommandBuffer, _: types.VkPipelineBindPoint, _: types.VkPipelineLayout, _: u32, _: u32, _: *const types.VkDescriptorSet, _: u32, _: ?[*]const u32) callconv(.C) void {}
+fn stubCmdBindDescriptorSets(_: types.VkCommandBuffer, _: types.VkPipelineBindPoint, _: types.VkPipelineLayout, _: u32, _: u32, _: *const types.VkDescriptorSet, _: u32, _: ?[*]const u32) callconv(.c) void {}
 
-fn stubCmdBindVertexBuffers(_: types.VkCommandBuffer, _: u32, _: u32, _: *const types.VkBuffer, _: *const types.VkDeviceSize) callconv(.C) void {}
+fn stubCmdBindVertexBuffers(_: types.VkCommandBuffer, _: u32, _: u32, _: *const types.VkBuffer, _: *const types.VkDeviceSize) callconv(.c) void {}
 
-fn stubCmdPushConstants(_: types.VkCommandBuffer, _: types.VkPipelineLayout, _: types.VkShaderStageFlags, _: u32, _: u32, _: ?*const anyopaque) callconv(.C) void {}
+fn stubCmdPushConstants(_: types.VkCommandBuffer, _: types.VkPipelineLayout, _: types.VkShaderStageFlags, _: u32, _: u32, _: ?*const anyopaque) callconv(.c) void {}
 
-fn stubCmdSetViewport(_: types.VkCommandBuffer, _: u32, _: u32, _: *const types.VkViewport) callconv(.C) void {}
+fn stubCmdSetViewport(_: types.VkCommandBuffer, _: u32, _: u32, _: *const types.VkViewport) callconv(.c) void {}
 
-fn stubCmdSetScissor(_: types.VkCommandBuffer, _: u32, _: u32, _: *const types.VkRect2D) callconv(.C) void {}
+fn stubCmdSetScissor(_: types.VkCommandBuffer, _: u32, _: u32, _: *const types.VkRect2D) callconv(.c) void {}
 
-fn stubCmdDraw(_: types.VkCommandBuffer, _: u32, _: u32, _: u32, _: u32) callconv(.C) void {}
+fn stubCmdDraw(_: types.VkCommandBuffer, _: u32, _: u32, _: u32, _: u32) callconv(.c) void {}
 
-fn stubCmdCopyBuffer(_: types.VkCommandBuffer, _: types.VkBuffer, _: types.VkBuffer, _: u32, _: *const types.VkBufferCopy) callconv(.C) void {}
+fn stubCmdCopyBuffer(_: types.VkCommandBuffer, _: types.VkBuffer, _: types.VkBuffer, _: u32, _: *const types.VkBufferCopy) callconv(.c) void {}
 
-fn stubCmdCopyBufferToImage(_: types.VkCommandBuffer, _: types.VkBuffer, _: types.VkImage, _: types.VkImageLayout, _: u32, _: *const types.VkBufferImageCopy) callconv(.C) void {}
+fn stubCmdCopyBufferToImage(_: types.VkCommandBuffer, _: types.VkBuffer, _: types.VkImage, _: types.VkImageLayout, _: u32, _: *const types.VkBufferImageCopy) callconv(.c) void {}
 
-fn stubCmdCopyImageToBuffer(_: types.VkCommandBuffer, _: types.VkImage, _: types.VkImageLayout, _: types.VkBuffer, _: u32, _: *const types.VkBufferImageCopy) callconv(.C) void {}
+fn stubCmdCopyImageToBuffer(_: types.VkCommandBuffer, _: types.VkImage, _: types.VkImageLayout, _: types.VkBuffer, _: u32, _: *const types.VkBufferImageCopy) callconv(.c) void {}
 
-fn stubCmdPipelineBarrier(_: types.VkCommandBuffer, _: types.VkPipelineStageFlags, _: types.VkPipelineStageFlags, _: types.VkDependencyFlags, _: u32, _: ?[*]const types.VkMemoryBarrier, _: u32, _: ?[*]const types.VkBufferMemoryBarrier, _: u32, _: ?[*]const types.VkImageMemoryBarrier) callconv(.C) void {}
+fn stubCmdPipelineBarrier(_: types.VkCommandBuffer, _: types.VkPipelineStageFlags, _: types.VkPipelineStageFlags, _: types.VkDependencyFlags, _: u32, _: ?[*]const types.VkMemoryBarrier, _: u32, _: ?[*]const types.VkBufferMemoryBarrier, _: u32, _: ?[*]const types.VkImageMemoryBarrier) callconv(.c) void {}
 
-fn stubBeginCommandBuffer(_: types.VkCommandBuffer, _: *const types.VkCommandBufferBeginInfo) callconv(.C) types.VkResult {
+fn stubBeginCommandBuffer(_: types.VkCommandBuffer, _: *const types.VkCommandBufferBeginInfo) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 
-fn stubEndCommandBuffer(_: types.VkCommandBuffer) callconv(.C) types.VkResult {
+fn stubEndCommandBuffer(_: types.VkCommandBuffer) callconv(.c) types.VkResult {
     return .SUCCESS;
 }
 

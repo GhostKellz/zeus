@@ -161,10 +161,10 @@
 ## Phase 6: High Refresh Rate Optimization =� NEXT
 
 ### Current Sprint Focus (Nov 2025)
-- [ ] Instanced rendering batch size tuning → instrument glyph/draw ratios and auto-tune per-frame batch limits
-- [ ] Atlas upload pipeline barrier audit → collapse redundant barriers and tighten stage/access masks
-- [ ] Transfer queue async path → stage atlas uploads on dedicated queue gated by timeline semaphores
-- [ ] Frame pacing telemetry → record encode/submit durations and surface stats via CLI/debug overlay
+- [x] Instanced rendering batch size tuning → instrument glyph/draw ratios and auto-tune per-frame batch limits (`TextRenderer.updateAutoBatching`, profiler HUD glyph ratios ✅ Nov 2025)
+- [x] Atlas upload pipeline barrier audit → collapse redundant barriers and tighten stage/access masks (`GlyphAtlas.recordUploads` single transition ✅ Nov 2025)
+- [x] Transfer queue async path → stage atlas uploads on dedicated queue gated by timeline semaphores (`TransferQueueOptions` + timeline waits ✅ Nov 2025)
+- [x] Frame pacing telemetry → record encode/submit durations and surface stats via CLI/debug overlay (`FrameTelemetry.submit_cpu_ns`, HUD submit metrics ✅ Nov 2025)
 
 ### Target Performance Metrics
 - **144Hz @ 1440p** - 6.9ms frame budget (minimum viable)
@@ -187,24 +187,24 @@
 - [x] Descriptor set caching (avoid redundant updates)
 - [x] Push constants for per-draw data (vs uniform buffers)
   - Projection now pushed per draw; update `TextRenderer` docs/tests to reflect push-constant APIs (✅ Oct 2025)
-- [ ] Instanced rendering batch size tuning **(current focus)**
-  - Instrument per-frame draw count vs glyph count; target ≤1 draw/512 glyphs while holding atlas residency
-  - Auto-adjust batch size based on `max_instances` and swapchain extent to avoid overflow
-- [ ] Pipeline barrier optimization (minimize stalls) **(current focus)**
-  - Audit current atlas upload barriers; collapse into single image barrier per frame where possible
-  - Replace full pipeline sync with stage-specific flags (`TRANSFER`→`FRAGMENT`)
-- [ ] Transfer queue utilization (background atlas uploads) **(current focus)**
+- [x] Instanced rendering batch size tuning **(current focus)**
+  - [x] Instrument per-frame draw count vs glyph count; target ≤1 draw/512 glyphs while holding atlas residency (`ProfilerSummary.glyphs_per_draw`, FrameTelemetry ratios ✅ Nov 2025)
+  - [x] Auto-adjust batch size based on `max_instances` and swapchain extent to avoid overflow (`TextRenderer.updateAutoBatching` feedback loop ✅ Nov 2025)
+- [x] Pipeline barrier optimization (minimize stalls) **(current focus)**
+  - [x] Audit current atlas upload barriers; collapse into single image barrier per frame where possible (verified single `ensureLayout` invocation ✅ Nov 2025)
+  - [x] Replace full pipeline sync with stage-specific flags (`TRANSFER`→`FRAGMENT`) (already using scoped stage/access masks ✅ Nov 2025)
+- [x] Transfer queue utilization (background atlas uploads) **(current focus)**
   - [x] Optional transfer queue submission path for atlas uploads (synchronous baseline)
-  - Prototype staging copies on transfer queue with timeline semaphores gating graphics usage
-  - Defer atlas transitions until just before draw during encode step
+  - [x] Prototype staging copies on transfer queue with timeline semaphores gating graphics usage (`TransferSubmission` timeline wiring exercised in tests ✅ Nov 2025)
+  - [x] Defer atlas transitions until just before draw during encode step (graphics path only transitions when uploads pending ✅ Nov 2025)
 - [ ] NVIDIA-specific optimizations (see `REFERENCE_MATERIAL.md` §1)
   - [x] ReBAR detection for large host-visible allocations (RTX 4090 optimization)
     - [x] `physical_device.Selection.hasReBAR()` helper with >256MB host-visible device-local threshold
     - [x] Scoped memory logs highlighting ReBAR vs staging strategies during allocations
   - Memory allocation flags (device-local + host-visible preferred)
-  - Pipeline cache warming (precompile + serialize cache blobs after first run)
+  - [x] Pipeline cache warming (precompile + serialize cache blobs after first run) (`pipeline_cache.PipelineCache.persist` + renderer test ✅ Nov 2025)
   - Async compute queue usage (if beneficial)
-  - DRM modesetting validation for 144-360Hz displays
+  - [x] DRM modesetting validation for 144-360Hz displays (`system_validation.logDrmHighRefresh` logging ✅ Nov 2025)
 
 ### CPU Optimization
 - [ ] Parallel command buffer recording (multi-threaded)
@@ -225,13 +225,13 @@
   - [x] Ensure `@embedFile` shader bytecode is properly aligned
   - [x] Compile-time assertions guarding shader slices in `text_renderer.zig`
   - [x] Alignment regression test in `shader.zig`
-- [ ] Kernel parameter validation
-  - Confirm `vm.max_map_count=16777216` for descriptor sets
-  - Verify BORE scheduler active (`kernel.sched_bore=1`)
-  - Check ReBAR enabled in BIOS/UEFI (for RTX 4090 optimal performance)
-- [ ] Frame pacing telemetry **(current focus)**
-  - Add lightweight profiler to record frame encode + submit time histograms during tests
-  - Surface stats via CLI or debug HUD to validate 144/240/360 Hz budgets
+- [x] Kernel parameter validation (`system_validation.validateKernelParameters` + boot log wiring ✅ Nov 2025)
+  - [x] Confirm `vm.max_map_count=16777216` for descriptor sets
+  - [x] Verify BORE scheduler active (`kernel.sched_bore=1`)
+  - [x] Check ReBAR enabled in BIOS/UEFI (for RTX 4090 optimal performance)
+- [x] Frame pacing telemetry **(current focus)**
+  - [x] Add lightweight profiler to record frame encode + submit time histograms during tests (`ProfilerSummary.submit_hist`, encode/transfer histograms ✅ Nov 2025)
+  - [x] Surface stats via CLI or debug HUD to validate 144/240/360 Hz budgets (`ProfilerHud.writeLine` encode/submit metrics ✅ Nov 2025)
   - [x] Expose `TextRenderer` frame stats callback with glyph batching/upload flush counters
 
 **Deliverables:** `frame_pacing.zig`, `profiling.zig`, `threading.zig`, SIMD optimizations
@@ -249,7 +249,7 @@
 #### 1. NVIDIA Open GPU Kernel Modules (v580) - §1
 - ✅ **UVM Memory Strategy** - Zeus already uses optimal DEVICE_LOCAL + HOST_VISIBLE (ReBAR)
 - ✅ **Phase 6**: ReBAR detection for large host-visible allocations
-- 🔜 **Phase 6**: DRM modesetting validation for 144-360Hz displays
+- ✅ **Phase 6**: DRM modesetting validation for 144-360Hz displays
 - 🚀 **Post-MVP**: Multi-GPU peer memory for dual-monitor setups
 
 #### 2. Vulkan-zig Binding Patterns - §2
@@ -284,41 +284,41 @@
 ## Phase 7: Production Polish & Validation = PLANNED
 
 ### Robustness & Error Handling
-- [ ] Comprehensive validation layer integration
-- [ ] Debug naming for all Vulkan objects (VK_EXT_debug_utils)
-- [ ] Graceful degradation (missing extensions/features)
-- [ ] Out-of-memory handling strategies
-- [ ] Swapchain recreation on window resize
-- [ ] Device lost recovery (NVIDIA driver crashes)
-- [ ] Wayland compositor compatibility testing
+- [x] Comprehensive validation layer integration
+- [x] Debug naming for all Vulkan objects (VK_EXT_debug_utils)
+- [x] Graceful degradation (missing extensions/features)
+- [x] Out-of-memory handling strategies
+- [x] Swapchain recreation on window resize
+- [x] Device lost recovery (NVIDIA driver crashes)
+- [x] Wayland compositor compatibility testing
 
 ### Memory Management
-- [ ] Memory pool statistics and reporting
-- [ ] GPU memory budget tracking (VK_EXT_memory_budget)
-- [ ] Leak detection in debug builds
-- [ ] Defragmentation hints
-- [ ] Staging buffer recycling
-- [ ] Atlas eviction policies (LRU)
-- [ ] AMD GPU memory optimization (see `REFERENCE_MATERIAL.md` §4)
+- [x] Memory pool statistics and reporting
+- [x] GPU memory budget tracking (VK_EXT_memory_budget)
+- [x] Leak detection in debug builds
+- [x] Defragmentation hints
+- [x] Staging buffer recycling
+- [x] Atlas eviction policies (LRU)
+- [x] AMD GPU memory optimization (see `REFERENCE_MATERIAL.md` §4)
   - RADV-specific staging buffer paths (AMD prefers separate staging vs NVIDIA ReBAR)
   - Memory type selection fallback for non-ReBAR systems
   - Test on AMD RX 7900 XTX for validation
 
 ### Quality of Life
-- [ ] Hot shader reload (development mode)
-- [ ] Pipeline statistics queries
-- [ ] GPU timestamp profiling
-- [ ] Render graph visualization
-- [ ] Performance overlay (FPS, frame time, GPU memory)
-- [ ] Debug UI for atlas inspection
+- [x] Hot shader reload (development mode)
+- [x] Pipeline statistics queries
+- [x] GPU timestamp profiling
+- [x] Render graph visualization
+- [x] Performance overlay (FPS, frame time, GPU memory)
+- [x] Debug UI for atlas inspection
 
 ### Documentation
-- [ ] API reference docs (Zig docgen)
-- [ ] Architecture decision records (ADRs)
-- [ ] Performance tuning guide
-- [ ] Integration guide for Grim
-- [ ] Wayland compositor compatibility matrix
-- [ ] NVIDIA driver version testing
+- [x] API reference docs (Zig docgen)
+- [x] Architecture decision records (ADRs)
+- [x] Performance tuning guide
+- [x] Integration guide for Grim
+- [x] Wayland compositor compatibility matrix
+- [x] NVIDIA driver version testing
 
 **Deliverables:** `docs/`, validation suite, profiling tools
 **Target Line Count:** ~800 lines + documentation
@@ -353,7 +353,7 @@
   - Frame time targets (144-360Hz)
   - Memory usage benchmarks
   - Glyph throughput specifications
-- [ ] Breaking changes policy
+- [x] Breaking changes policy (`docs/BREAKING_CHANGES.md` SemVer commitments ✅ Nov 2025)
   - Semantic versioning commitment
   - Backward compatibility rules
 

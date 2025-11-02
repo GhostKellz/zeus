@@ -111,13 +111,13 @@ const Capture = struct {
         destroy_calls = 0;
     }
 
-    pub fn stubCreate(_: types.VkDevice, info: *const types.VkRenderPassCreateInfo, _: ?*const types.VkAllocationCallbacks, render_pass: *types.VkRenderPass) callconv(.C) types.VkResult {
+    pub fn stubCreate(_: types.VkDevice, info: *const types.VkRenderPassCreateInfo, _: ?*const types.VkAllocationCallbacks, render_pass: *types.VkRenderPass) callconv(.c) types.VkResult {
         create_info = info.*;
         render_pass.* = fake_render_pass;
         return .SUCCESS;
     }
 
-    pub fn stubDestroy(_: types.VkDevice, _: types.VkRenderPass, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+    pub fn stubDestroy(_: types.VkDevice, _: types.VkRenderPass, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
         destroy_calls += 1;
     }
 };

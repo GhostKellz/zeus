@@ -116,6 +116,7 @@ pub const VkSampler_T = opaque {};
 pub const VkShaderModule_T = opaque {};
 pub const VkRenderPass_T = opaque {};
 pub const VkPipeline_T = opaque {};
+pub const VkPipelineCache_T = opaque {};
 pub const VkPipelineLayout_T = opaque {};
 pub const VkDescriptorSetLayout_T = opaque {};
 pub const VkDescriptorPool_T = opaque {};
@@ -138,6 +139,7 @@ pub const VkSampler = *VkSampler_T;
 pub const VkShaderModule = *VkShaderModule_T;
 pub const VkRenderPass = *VkRenderPass_T;
 pub const VkPipeline = *VkPipeline_T;
+pub const VkPipelineCache = *VkPipelineCache_T;
 pub const VkPipelineLayout = *VkPipelineLayout_T;
 pub const VkDescriptorSetLayout = *VkDescriptorSetLayout_T;
 pub const VkDescriptorPool = *VkDescriptorPool_T;
@@ -149,11 +151,11 @@ pub const VkImage = *VkImage_T;
 
 pub const VkAllocationCallbacks = extern struct {
     pUserData: ?*anyopaque,
-    pfnAllocation: ?*const fn (?*anyopaque, usize, usize, VkSystemAllocationScope) callconv(.C) ?*anyopaque,
-    pfnReallocation: ?*const fn (?*anyopaque, ?*anyopaque, usize, usize, VkSystemAllocationScope) callconv(.C) ?*anyopaque,
-    pfnFree: ?*const fn (?*anyopaque, ?*anyopaque) callconv(.C) void,
-    pfnInternalAllocation: ?*const fn (?*anyopaque, usize, VkInternalAllocationType, VkSystemAllocationScope) callconv(.C) void,
-    pfnInternalFree: ?*const fn (?*anyopaque, usize, VkInternalAllocationType, VkSystemAllocationScope) callconv(.C) void,
+    pfnAllocation: ?*const fn (?*anyopaque, usize, usize, VkSystemAllocationScope) callconv(.c) ?*anyopaque,
+    pfnReallocation: ?*const fn (?*anyopaque, ?*anyopaque, usize, usize, VkSystemAllocationScope) callconv(.c) ?*anyopaque,
+    pfnFree: ?*const fn (?*anyopaque, ?*anyopaque) callconv(.c) void,
+    pfnInternalAllocation: ?*const fn (?*anyopaque, usize, VkInternalAllocationType, VkSystemAllocationScope) callconv(.c) void,
+    pfnInternalFree: ?*const fn (?*anyopaque, usize, VkInternalAllocationType, VkSystemAllocationScope) callconv(.c) void,
 };
 
 pub const VkSystemAllocationScope = enum(u32) {
@@ -334,6 +336,16 @@ pub const VK_SHADER_STAGE_FRAGMENT_BIT: VkShaderStageFlags = 0x00000010;
 pub const VK_SHADER_STAGE_COMPUTE_BIT: VkShaderStageFlags = 0x00000020;
 pub const VK_SHADER_STAGE_ALL_GRAPHICS: VkShaderStageFlags = 0x0000001F;
 pub const VK_SHADER_STAGE_ALL: VkShaderStageFlags = 0x7FFFFFFF;
+
+pub const VkPipelineCacheCreateFlags = VkFlags;
+
+pub const VkPipelineCacheCreateInfo = extern struct {
+    sType: VkStructureType = .PIPELINE_CACHE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: VkPipelineCacheCreateFlags = 0,
+    initialDataSize: usize = 0,
+    pInitialData: ?*const anyopaque = null,
+};
 
 pub const VkPushConstantRange = extern struct {
     stageFlags: VkShaderStageFlags,
@@ -627,82 +639,85 @@ pub const VkPhysicalDeviceProperties = extern struct {
 pub const PFN_vkVoidFunction = ?*const anyopaque;
 pub const PFN_vkVoidFunctionNonNull = *const anyopaque;
 
-pub const PFN_vkGetInstanceProcAddr = *const fn (?VkInstance, [*:0]const u8) callconv(.C) PFN_vkVoidFunction;
-pub const PFN_vkGetDeviceProcAddr = *const fn (VkDevice, [*:0]const u8) callconv(.C) PFN_vkVoidFunction;
+pub const PFN_vkGetInstanceProcAddr = *const fn (?VkInstance, [*:0]const u8) callconv(.c) PFN_vkVoidFunction;
+pub const PFN_vkGetDeviceProcAddr = *const fn (VkDevice, [*:0]const u8) callconv(.c) PFN_vkVoidFunction;
 
-pub const PFN_vkCreateInstance = *const fn (?*const VkInstanceCreateInfo, ?*const VkAllocationCallbacks, *VkInstance) callconv(.C) VkResult;
-pub const PFN_vkEnumerateInstanceExtensionProperties = *const fn (?[*:0]const u8, *u32, ?[*]VkExtensionProperties) callconv(.C) VkResult;
-pub const PFN_vkEnumerateInstanceLayerProperties = *const fn (*u32, ?[*]VkLayerProperties) callconv(.C) VkResult;
-pub const PFN_vkDestroyInstance = *const fn (VkInstance, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkEnumeratePhysicalDevices = *const fn (VkInstance, *u32, ?[*]VkPhysicalDevice) callconv(.C) VkResult;
-pub const PFN_vkGetPhysicalDeviceQueueFamilyProperties = *const fn (VkPhysicalDevice, *u32, ?[*]VkQueueFamilyProperties) callconv(.C) void;
-pub const PFN_vkGetPhysicalDeviceFeatures = *const fn (VkPhysicalDevice, *VkPhysicalDeviceFeatures) callconv(.C) void;
-pub const PFN_vkGetPhysicalDeviceProperties = *const fn (VkPhysicalDevice, *VkPhysicalDeviceProperties) callconv(.C) void;
-pub const PFN_vkGetPhysicalDeviceMemoryProperties = *const fn (VkPhysicalDevice, *VkPhysicalDeviceMemoryProperties) callconv(.C) void;
-pub const PFN_vkEnumerateDeviceExtensionProperties = *const fn (VkPhysicalDevice, ?[*:0]const u8, *u32, ?[*]VkExtensionProperties) callconv(.C) VkResult;
-pub const PFN_vkCreateDevice = *const fn (VkPhysicalDevice, *const VkDeviceCreateInfo, ?*const VkAllocationCallbacks, *VkDevice) callconv(.C) VkResult;
-pub const PFN_vkDestroyDevice = *const fn (VkDevice, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkGetDeviceQueue = *const fn (VkDevice, u32, u32, *VkQueue) callconv(.C) void;
-pub const PFN_vkQueueSubmit = *const fn (VkQueue, u32, ?[*]const VkSubmitInfo, ?VkFence) callconv(.C) VkResult;
-pub const PFN_vkQueueWaitIdle = *const fn (VkQueue) callconv(.C) VkResult;
-pub const PFN_vkCreateFence = *const fn (VkDevice, *const VkFenceCreateInfo, ?*const VkAllocationCallbacks, *VkFence) callconv(.C) VkResult;
-pub const PFN_vkDestroyFence = *const fn (VkDevice, VkFence, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkResetFences = *const fn (VkDevice, u32, *const VkFence) callconv(.C) VkResult;
-pub const PFN_vkWaitForFences = *const fn (VkDevice, u32, *const VkFence, VkBool32, u64) callconv(.C) VkResult;
-pub const PFN_vkGetFenceStatus = *const fn (VkDevice, VkFence) callconv(.C) VkResult;
-pub const PFN_vkCreateSemaphore = *const fn (VkDevice, *const VkSemaphoreCreateInfo, ?*const VkAllocationCallbacks, *VkSemaphore) callconv(.C) VkResult;
-pub const PFN_vkDestroySemaphore = *const fn (VkDevice, VkSemaphore, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkWaitSemaphores = *const fn (VkDevice, *const VkSemaphoreWaitInfo, u64) callconv(.C) VkResult;
-pub const PFN_vkSignalSemaphore = *const fn (VkDevice, *const VkSemaphoreSignalInfo) callconv(.C) VkResult;
-pub const PFN_vkCreateBuffer = *const fn (VkDevice, *const VkBufferCreateInfo, ?*const VkAllocationCallbacks, *VkBuffer) callconv(.C) VkResult;
-pub const PFN_vkDestroyBuffer = *const fn (VkDevice, VkBuffer, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkGetBufferMemoryRequirements = *const fn (VkDevice, VkBuffer, *VkMemoryRequirements) callconv(.C) void;
-pub const PFN_vkBindBufferMemory = *const fn (VkDevice, VkBuffer, VkDeviceMemory, VkDeviceSize) callconv(.C) VkResult;
-pub const PFN_vkCreateImage = *const fn (VkDevice, *const VkImageCreateInfo, ?*const VkAllocationCallbacks, *VkImage) callconv(.C) VkResult;
-pub const PFN_vkDestroyImage = *const fn (VkDevice, VkImage, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkGetImageMemoryRequirements = *const fn (VkDevice, VkImage, *VkMemoryRequirements) callconv(.C) void;
-pub const PFN_vkBindImageMemory = *const fn (VkDevice, VkImage, VkDeviceMemory, VkDeviceSize) callconv(.C) VkResult;
-pub const PFN_vkCreateImageView = *const fn (VkDevice, *const VkImageViewCreateInfo, ?*const VkAllocationCallbacks, *VkImageView) callconv(.C) VkResult;
-pub const PFN_vkDestroyImageView = *const fn (VkDevice, VkImageView, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkAllocateMemory = *const fn (VkDevice, *const VkMemoryAllocateInfo, ?*const VkAllocationCallbacks, *VkDeviceMemory) callconv(.C) VkResult;
-pub const PFN_vkFreeMemory = *const fn (VkDevice, VkDeviceMemory, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkMapMemory = *const fn (VkDevice, VkDeviceMemory, VkDeviceSize, VkDeviceSize, VkMemoryMapFlags, *?*anyopaque) callconv(.C) VkResult;
-pub const PFN_vkUnmapMemory = *const fn (VkDevice, VkDeviceMemory) callconv(.C) void;
-pub const PFN_vkFlushMappedMemoryRanges = *const fn (VkDevice, u32, *const VkMappedMemoryRange) callconv(.C) VkResult;
-pub const PFN_vkInvalidateMappedMemoryRanges = *const fn (VkDevice, u32, *const VkMappedMemoryRange) callconv(.C) VkResult;
-pub const PFN_vkCmdPipelineBarrier = *const fn (VkCommandBuffer, VkPipelineStageFlags, VkPipelineStageFlags, VkDependencyFlags, u32, ?[*]const VkMemoryBarrier, u32, ?[*]const VkBufferMemoryBarrier, u32, ?[*]const VkImageMemoryBarrier) callconv(.C) void;
-pub const PFN_vkCmdCopyBuffer = *const fn (VkCommandBuffer, VkBuffer, VkBuffer, u32, *const VkBufferCopy) callconv(.C) void;
-pub const PFN_vkCmdCopyBufferToImage = *const fn (VkCommandBuffer, VkBuffer, VkImage, VkImageLayout, u32, *const VkBufferImageCopy) callconv(.C) void;
-pub const PFN_vkCmdBindPipeline = *const fn (VkCommandBuffer, VkPipelineBindPoint, VkPipeline) callconv(.C) void;
-pub const PFN_vkCmdBindDescriptorSets = *const fn (VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, u32, u32, *const VkDescriptorSet, u32, ?[*]const u32) callconv(.C) void;
-pub const PFN_vkCmdBindVertexBuffers = *const fn (VkCommandBuffer, u32, u32, *const VkBuffer, *const VkDeviceSize) callconv(.C) void;
-pub const PFN_vkCmdPushConstants = *const fn (VkCommandBuffer, VkPipelineLayout, VkShaderStageFlags, u32, u32, ?*const anyopaque) callconv(.C) void;
-pub const PFN_vkCmdSetViewport = *const fn (VkCommandBuffer, u32, u32, *const VkViewport) callconv(.C) void;
-pub const PFN_vkCmdSetScissor = *const fn (VkCommandBuffer, u32, u32, *const VkRect2D) callconv(.C) void;
-pub const PFN_vkCmdDraw = *const fn (VkCommandBuffer, u32, u32, u32, u32) callconv(.C) void;
-pub const PFN_vkCmdBeginRenderPass = *const fn (VkCommandBuffer, *const VkRenderPassBeginInfo, VkSubpassContents) callconv(.C) void;
-pub const PFN_vkCmdEndRenderPass = *const fn (VkCommandBuffer) callconv(.C) void;
-pub const PFN_vkCmdCopyImageToBuffer = *const fn (VkCommandBuffer, VkImage, VkImageLayout, VkBuffer, u32, *const VkBufferImageCopy) callconv(.C) void;
-pub const PFN_vkCreateFramebuffer = *const fn (VkDevice, *const VkFramebufferCreateInfo, ?*const VkAllocationCallbacks, *VkFramebuffer) callconv(.C) VkResult;
-pub const PFN_vkDestroyFramebuffer = *const fn (VkDevice, VkFramebuffer, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkCreateCommandPool = *const fn (VkDevice, *const VkCommandPoolCreateInfo, ?*const VkAllocationCallbacks, *VkCommandPool) callconv(.C) VkResult;
-pub const PFN_vkDestroyCommandPool = *const fn (VkDevice, VkCommandPool, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkResetCommandPool = *const fn (VkDevice, VkCommandPool, VkCommandPoolResetFlags) callconv(.C) VkResult;
-pub const PFN_vkAllocateCommandBuffers = *const fn (VkDevice, *const VkCommandBufferAllocateInfo, *VkCommandBuffer) callconv(.C) VkResult;
-pub const PFN_vkFreeCommandBuffers = *const fn (VkDevice, VkCommandPool, u32, *const VkCommandBuffer) callconv(.C) void;
-pub const PFN_vkBeginCommandBuffer = *const fn (VkCommandBuffer, *const VkCommandBufferBeginInfo) callconv(.C) VkResult;
-pub const PFN_vkEndCommandBuffer = *const fn (VkCommandBuffer) callconv(.C) VkResult;
+pub const PFN_vkCreateInstance = *const fn (?*const VkInstanceCreateInfo, ?*const VkAllocationCallbacks, *VkInstance) callconv(.c) VkResult;
+pub const PFN_vkEnumerateInstanceExtensionProperties = *const fn (?[*:0]const u8, *u32, ?[*]VkExtensionProperties) callconv(.c) VkResult;
+pub const PFN_vkEnumerateInstanceLayerProperties = *const fn (*u32, ?[*]VkLayerProperties) callconv(.c) VkResult;
+pub const PFN_vkDestroyInstance = *const fn (VkInstance, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkEnumeratePhysicalDevices = *const fn (VkInstance, *u32, ?[*]VkPhysicalDevice) callconv(.c) VkResult;
+pub const PFN_vkGetPhysicalDeviceQueueFamilyProperties = *const fn (VkPhysicalDevice, *u32, ?[*]VkQueueFamilyProperties) callconv(.c) void;
+pub const PFN_vkGetPhysicalDeviceFeatures = *const fn (VkPhysicalDevice, *VkPhysicalDeviceFeatures) callconv(.c) void;
+pub const PFN_vkGetPhysicalDeviceProperties = *const fn (VkPhysicalDevice, *VkPhysicalDeviceProperties) callconv(.c) void;
+pub const PFN_vkGetPhysicalDeviceMemoryProperties = *const fn (VkPhysicalDevice, *VkPhysicalDeviceMemoryProperties) callconv(.c) void;
+pub const PFN_vkEnumerateDeviceExtensionProperties = *const fn (VkPhysicalDevice, ?[*:0]const u8, *u32, ?[*]VkExtensionProperties) callconv(.c) VkResult;
+pub const PFN_vkCreateDevice = *const fn (VkPhysicalDevice, *const VkDeviceCreateInfo, ?*const VkAllocationCallbacks, *VkDevice) callconv(.c) VkResult;
+pub const PFN_vkDestroyDevice = *const fn (VkDevice, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkGetDeviceQueue = *const fn (VkDevice, u32, u32, *VkQueue) callconv(.c) void;
+pub const PFN_vkQueueSubmit = *const fn (VkQueue, u32, ?[*]const VkSubmitInfo, ?VkFence) callconv(.c) VkResult;
+pub const PFN_vkQueueWaitIdle = *const fn (VkQueue) callconv(.c) VkResult;
+pub const PFN_vkCreateFence = *const fn (VkDevice, *const VkFenceCreateInfo, ?*const VkAllocationCallbacks, *VkFence) callconv(.c) VkResult;
+pub const PFN_vkDestroyFence = *const fn (VkDevice, VkFence, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkResetFences = *const fn (VkDevice, u32, *const VkFence) callconv(.c) VkResult;
+pub const PFN_vkWaitForFences = *const fn (VkDevice, u32, *const VkFence, VkBool32, u64) callconv(.c) VkResult;
+pub const PFN_vkGetFenceStatus = *const fn (VkDevice, VkFence) callconv(.c) VkResult;
+pub const PFN_vkCreateSemaphore = *const fn (VkDevice, *const VkSemaphoreCreateInfo, ?*const VkAllocationCallbacks, *VkSemaphore) callconv(.c) VkResult;
+pub const PFN_vkDestroySemaphore = *const fn (VkDevice, VkSemaphore, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkWaitSemaphores = *const fn (VkDevice, *const VkSemaphoreWaitInfo, u64) callconv(.c) VkResult;
+pub const PFN_vkSignalSemaphore = *const fn (VkDevice, *const VkSemaphoreSignalInfo) callconv(.c) VkResult;
+pub const PFN_vkCreateBuffer = *const fn (VkDevice, *const VkBufferCreateInfo, ?*const VkAllocationCallbacks, *VkBuffer) callconv(.c) VkResult;
+pub const PFN_vkDestroyBuffer = *const fn (VkDevice, VkBuffer, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkGetBufferMemoryRequirements = *const fn (VkDevice, VkBuffer, *VkMemoryRequirements) callconv(.c) void;
+pub const PFN_vkBindBufferMemory = *const fn (VkDevice, VkBuffer, VkDeviceMemory, VkDeviceSize) callconv(.c) VkResult;
+pub const PFN_vkCreateImage = *const fn (VkDevice, *const VkImageCreateInfo, ?*const VkAllocationCallbacks, *VkImage) callconv(.c) VkResult;
+pub const PFN_vkDestroyImage = *const fn (VkDevice, VkImage, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkGetImageMemoryRequirements = *const fn (VkDevice, VkImage, *VkMemoryRequirements) callconv(.c) void;
+pub const PFN_vkBindImageMemory = *const fn (VkDevice, VkImage, VkDeviceMemory, VkDeviceSize) callconv(.c) VkResult;
+pub const PFN_vkCreateImageView = *const fn (VkDevice, *const VkImageViewCreateInfo, ?*const VkAllocationCallbacks, *VkImageView) callconv(.c) VkResult;
+pub const PFN_vkDestroyImageView = *const fn (VkDevice, VkImageView, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreatePipelineCache = *const fn (VkDevice, *const VkPipelineCacheCreateInfo, ?*const VkAllocationCallbacks, *VkPipelineCache) callconv(.c) VkResult;
+pub const PFN_vkDestroyPipelineCache = *const fn (VkDevice, VkPipelineCache, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkGetPipelineCacheData = *const fn (VkDevice, VkPipelineCache, *usize, ?*anyopaque) callconv(.c) VkResult;
+pub const PFN_vkAllocateMemory = *const fn (VkDevice, *const VkMemoryAllocateInfo, ?*const VkAllocationCallbacks, *VkDeviceMemory) callconv(.c) VkResult;
+pub const PFN_vkFreeMemory = *const fn (VkDevice, VkDeviceMemory, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkMapMemory = *const fn (VkDevice, VkDeviceMemory, VkDeviceSize, VkDeviceSize, VkMemoryMapFlags, *?*anyopaque) callconv(.c) VkResult;
+pub const PFN_vkUnmapMemory = *const fn (VkDevice, VkDeviceMemory) callconv(.c) void;
+pub const PFN_vkFlushMappedMemoryRanges = *const fn (VkDevice, u32, *const VkMappedMemoryRange) callconv(.c) VkResult;
+pub const PFN_vkInvalidateMappedMemoryRanges = *const fn (VkDevice, u32, *const VkMappedMemoryRange) callconv(.c) VkResult;
+pub const PFN_vkCmdPipelineBarrier = *const fn (VkCommandBuffer, VkPipelineStageFlags, VkPipelineStageFlags, VkDependencyFlags, u32, ?[*]const VkMemoryBarrier, u32, ?[*]const VkBufferMemoryBarrier, u32, ?[*]const VkImageMemoryBarrier) callconv(.c) void;
+pub const PFN_vkCmdCopyBuffer = *const fn (VkCommandBuffer, VkBuffer, VkBuffer, u32, *const VkBufferCopy) callconv(.c) void;
+pub const PFN_vkCmdCopyBufferToImage = *const fn (VkCommandBuffer, VkBuffer, VkImage, VkImageLayout, u32, *const VkBufferImageCopy) callconv(.c) void;
+pub const PFN_vkCmdBindPipeline = *const fn (VkCommandBuffer, VkPipelineBindPoint, VkPipeline) callconv(.c) void;
+pub const PFN_vkCmdBindDescriptorSets = *const fn (VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, u32, u32, *const VkDescriptorSet, u32, ?[*]const u32) callconv(.c) void;
+pub const PFN_vkCmdBindVertexBuffers = *const fn (VkCommandBuffer, u32, u32, *const VkBuffer, *const VkDeviceSize) callconv(.c) void;
+pub const PFN_vkCmdPushConstants = *const fn (VkCommandBuffer, VkPipelineLayout, VkShaderStageFlags, u32, u32, ?*const anyopaque) callconv(.c) void;
+pub const PFN_vkCmdSetViewport = *const fn (VkCommandBuffer, u32, u32, *const VkViewport) callconv(.c) void;
+pub const PFN_vkCmdSetScissor = *const fn (VkCommandBuffer, u32, u32, *const VkRect2D) callconv(.c) void;
+pub const PFN_vkCmdDraw = *const fn (VkCommandBuffer, u32, u32, u32, u32) callconv(.c) void;
+pub const PFN_vkCmdBeginRenderPass = *const fn (VkCommandBuffer, *const VkRenderPassBeginInfo, VkSubpassContents) callconv(.c) void;
+pub const PFN_vkCmdEndRenderPass = *const fn (VkCommandBuffer) callconv(.c) void;
+pub const PFN_vkCmdCopyImageToBuffer = *const fn (VkCommandBuffer, VkImage, VkImageLayout, VkBuffer, u32, *const VkBufferImageCopy) callconv(.c) void;
+pub const PFN_vkCreateFramebuffer = *const fn (VkDevice, *const VkFramebufferCreateInfo, ?*const VkAllocationCallbacks, *VkFramebuffer) callconv(.c) VkResult;
+pub const PFN_vkDestroyFramebuffer = *const fn (VkDevice, VkFramebuffer, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreateCommandPool = *const fn (VkDevice, *const VkCommandPoolCreateInfo, ?*const VkAllocationCallbacks, *VkCommandPool) callconv(.c) VkResult;
+pub const PFN_vkDestroyCommandPool = *const fn (VkDevice, VkCommandPool, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkResetCommandPool = *const fn (VkDevice, VkCommandPool, VkCommandPoolResetFlags) callconv(.c) VkResult;
+pub const PFN_vkAllocateCommandBuffers = *const fn (VkDevice, *const VkCommandBufferAllocateInfo, *VkCommandBuffer) callconv(.c) VkResult;
+pub const PFN_vkFreeCommandBuffers = *const fn (VkDevice, VkCommandPool, u32, *const VkCommandBuffer) callconv(.c) void;
+pub const PFN_vkBeginCommandBuffer = *const fn (VkCommandBuffer, *const VkCommandBufferBeginInfo) callconv(.c) VkResult;
+pub const PFN_vkEndCommandBuffer = *const fn (VkCommandBuffer) callconv(.c) VkResult;
 
-pub const PFN_vkDestroySurfaceKHR = *const fn (VkInstance, VkSurfaceKHR, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkGetPhysicalDeviceSurfaceSupportKHR = *const fn (VkPhysicalDevice, u32, VkSurfaceKHR, *VkBool32) callconv(.C) VkResult;
-pub const PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR = *const fn (VkPhysicalDevice, VkSurfaceKHR, *VkSurfaceCapabilitiesKHR) callconv(.C) VkResult;
-pub const PFN_vkGetPhysicalDeviceSurfaceFormatsKHR = *const fn (VkPhysicalDevice, VkSurfaceKHR, *u32, ?[*]VkSurfaceFormatKHR) callconv(.C) VkResult;
-pub const PFN_vkGetPhysicalDeviceSurfacePresentModesKHR = *const fn (VkPhysicalDevice, VkSurfaceKHR, *u32, ?[*]VkPresentModeKHR) callconv(.C) VkResult;
-pub const PFN_vkCreateSwapchainKHR = *const fn (VkDevice, *const VkSwapchainCreateInfoKHR, ?*const VkAllocationCallbacks, *VkSwapchainKHR) callconv(.C) VkResult;
-pub const PFN_vkDestroySwapchainKHR = *const fn (VkDevice, VkSwapchainKHR, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkGetSwapchainImagesKHR = *const fn (VkDevice, VkSwapchainKHR, *u32, ?[*]VkImage) callconv(.C) VkResult;
-pub const PFN_vkAcquireNextImageKHR = *const fn (VkDevice, VkSwapchainKHR, u64, VkSemaphore, VkFence, *u32) callconv(.C) VkResult;
-pub const PFN_vkQueuePresentKHR = *const fn (VkQueue, *const VkPresentInfoKHR) callconv(.C) VkResult;
+pub const PFN_vkDestroySurfaceKHR = *const fn (VkInstance, VkSurfaceKHR, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkGetPhysicalDeviceSurfaceSupportKHR = *const fn (VkPhysicalDevice, u32, VkSurfaceKHR, *VkBool32) callconv(.c) VkResult;
+pub const PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR = *const fn (VkPhysicalDevice, VkSurfaceKHR, *VkSurfaceCapabilitiesKHR) callconv(.c) VkResult;
+pub const PFN_vkGetPhysicalDeviceSurfaceFormatsKHR = *const fn (VkPhysicalDevice, VkSurfaceKHR, *u32, ?[*]VkSurfaceFormatKHR) callconv(.c) VkResult;
+pub const PFN_vkGetPhysicalDeviceSurfacePresentModesKHR = *const fn (VkPhysicalDevice, VkSurfaceKHR, *u32, ?[*]VkPresentModeKHR) callconv(.c) VkResult;
+pub const PFN_vkCreateSwapchainKHR = *const fn (VkDevice, *const VkSwapchainCreateInfoKHR, ?*const VkAllocationCallbacks, *VkSwapchainKHR) callconv(.c) VkResult;
+pub const PFN_vkDestroySwapchainKHR = *const fn (VkDevice, VkSwapchainKHR, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkGetSwapchainImagesKHR = *const fn (VkDevice, VkSwapchainKHR, *u32, ?[*]VkImage) callconv(.c) VkResult;
+pub const PFN_vkAcquireNextImageKHR = *const fn (VkDevice, VkSwapchainKHR, u64, VkSemaphore, VkFence, *u32) callconv(.c) VkResult;
+pub const PFN_vkQueuePresentKHR = *const fn (VkQueue, *const VkPresentInfoKHR) callconv(.c) VkResult;
 
 pub const VkFence = *opaque {};
 
@@ -1212,11 +1227,11 @@ pub const VkImageMemoryBarrier = extern struct {
     image: VkImage,
     subresourceRange: VkImageSubresourceRange,
 };
-pub const PFN_vkCreateDebugUtilsMessengerEXT = ?*const fn (VkInstance, *const VkDebugUtilsMessengerCreateInfoEXT, ?*const VkAllocationCallbacks, *VkDebugUtilsMessengerEXT) callconv(.C) VkResult;
-pub const PFN_vkDestroyDebugUtilsMessengerEXT = ?*const fn (VkInstance, VkDebugUtilsMessengerEXT, ?*const VkAllocationCallbacks) callconv(.C) void;
-pub const PFN_vkSubmitDebugUtilsMessageEXT = ?*const fn (VkInstance, VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT, *const VkDebugUtilsMessengerCallbackDataEXT) callconv(.C) void;
-pub const PFN_vkGetRefreshCycleDurationGOOGLE = ?*const fn (VkDevice, VkSwapchainKHR, *VkRefreshCycleDurationGOOGLE) callconv(.C) VkResult;
-pub const PFN_vkGetPastPresentationTimingGOOGLE = ?*const fn (VkDevice, VkSwapchainKHR, *u32, ?[*]VkPastPresentationTimingGOOGLE) callconv(.C) VkResult;
+pub const PFN_vkCreateDebugUtilsMessengerEXT = ?*const fn (VkInstance, *const VkDebugUtilsMessengerCreateInfoEXT, ?*const VkAllocationCallbacks, *VkDebugUtilsMessengerEXT) callconv(.c) VkResult;
+pub const PFN_vkDestroyDebugUtilsMessengerEXT = ?*const fn (VkInstance, VkDebugUtilsMessengerEXT, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkSubmitDebugUtilsMessageEXT = ?*const fn (VkInstance, VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT, *const VkDebugUtilsMessengerCallbackDataEXT) callconv(.c) void;
+pub const PFN_vkGetRefreshCycleDurationGOOGLE = ?*const fn (VkDevice, VkSwapchainKHR, *VkRefreshCycleDurationGOOGLE) callconv(.c) VkResult;
+pub const PFN_vkGetPastPresentationTimingGOOGLE = ?*const fn (VkDevice, VkSwapchainKHR, *u32, ?[*]VkPastPresentationTimingGOOGLE) callconv(.c) VkResult;
 
 pub const VkSwapchainCreateFlagsKHR = VkFlags;
 
@@ -1304,7 +1319,7 @@ pub const VkDebugUtilsMessageTypeFlagBitsEXT = enum(VkDebugUtilsMessageTypeFlags
     PERFORMANCE = 0x00000004,
 };
 
-pub const PFN_vkDebugUtilsMessengerCallbackEXT = ?*const fn (VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT, *const VkDebugUtilsMessengerCallbackDataEXT, ?*anyopaque) callconv(.C) VkBool32;
+pub const PFN_vkDebugUtilsMessengerCallbackEXT = ?*const fn (VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT, *const VkDebugUtilsMessengerCallbackDataEXT, ?*anyopaque) callconv(.c) VkBool32;
 
 pub const VkDebugUtilsMessengerCallbackDataEXT = extern struct {
     sType: VkStructureType = .DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT,

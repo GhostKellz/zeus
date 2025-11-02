@@ -204,32 +204,32 @@ fn resetCapture() void {
     invalidate_calls = 0;
 }
 
-fn stubAllocateMemory(_: types.VkDevice, info: *const types.VkMemoryAllocateInfo, _: ?*const types.VkAllocationCallbacks, memory: *types.VkDeviceMemory) callconv(.C) types.VkResult {
+fn stubAllocateMemory(_: types.VkDevice, info: *const types.VkMemoryAllocateInfo, _: ?*const types.VkAllocationCallbacks, memory: *types.VkDeviceMemory) callconv(.c) types.VkResult {
     last_alloc_info = info.*;
     memory.* = @as(types.VkDeviceMemory, @ptrFromInt(@as(usize, 0x500)));
     return .SUCCESS;
 }
 
-fn stubFreeMemory(_: types.VkDevice, memory: types.VkDeviceMemory, _: ?*const types.VkAllocationCallbacks) callconv(.C) void {
+fn stubFreeMemory(_: types.VkDevice, memory: types.VkDeviceMemory, _: ?*const types.VkAllocationCallbacks) callconv(.c) void {
     freed_memory = memory;
 }
 
-fn stubMapMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: types.VkDeviceSize, _: types.VkDeviceSize, _: types.VkMemoryMapFlags, data: *?*anyopaque) callconv(.C) types.VkResult {
+fn stubMapMemory(_: types.VkDevice, _: types.VkDeviceMemory, _: types.VkDeviceSize, _: types.VkDeviceSize, _: types.VkMemoryMapFlags, data: *?*anyopaque) callconv(.c) types.VkResult {
     map_calls += 1;
     data.* = @as(*anyopaque, @ptrFromInt(@as(usize, 0xA00)));
     return .SUCCESS;
 }
 
-fn stubUnmapMemory(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.C) void {
+fn stubUnmapMemory(_: types.VkDevice, _: types.VkDeviceMemory) callconv(.c) void {
     unmap_calls += 1;
 }
 
-fn stubFlush(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.C) types.VkResult {
+fn stubFlush(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     flush_calls += 1;
     return .SUCCESS;
 }
 
-fn stubInvalidate(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.C) types.VkResult {
+fn stubInvalidate(_: types.VkDevice, _: u32, _: [*]const types.VkMappedMemoryRange) callconv(.c) types.VkResult {
     invalidate_calls += 1;
     return .SUCCESS;
 }
