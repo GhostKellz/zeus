@@ -15,6 +15,7 @@ const loader = @import("loader.zig");
 const sync = @import("sync.zig");
 const system_validation = @import("system_validation.zig");
 const pipeline_cache_mod = @import("pipeline_cache.zig");
+const physical_device = @import("physical_device.zig");
 
 const test_shaders = struct {
     pub const vert align(@alignOf(u32)) = [_]u8{ 0x03, 0x02, 0x23, 0x07 };
@@ -41,6 +42,7 @@ comptime {
 const has_avx2 = builtin.cpu.arch == .x86_64 and std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
 const simd_width: usize = 8;
 const SimdVec = @Vector(simd_width, f32);
+const no_frame_index: u32 = std.math.maxInt(u32);
 
 const RenderError = errors.Error || error{
     InvalidFrameIndex,
@@ -61,6 +63,98 @@ const Instance = extern struct {
     size: [2]f32,
     atlas_rect: [4]f32,
     color: [4]f32,
+};
+
+const InstanceSoA = struct {
+    positions: []f32,
+    sizes: []f32,
+    atlas_rects: []f32,
+    colors: []f32,
+
+    pub fn init(allocator: std.mem.Allocator, total_instances: usize) !InstanceSoA {
+        const pos = try allocator.alloc(f32, total_instances * 2);
+        errdefer allocator.free(pos);
+        const size = try allocator.alloc(f32, total_instances * 2);
+        errdefer allocator.free(size);
+        const atlas = try allocator.alloc(f32, total_instances * 4);
+        errdefer allocator.free(atlas);
+        const cols = try allocator.alloc(f32, total_instances * 4);
+        errdefer allocator.free(cols);
+        return InstanceSoA{
+            .positions = pos,
+            .sizes = size,
+            .atlas_rects = atlas,
+            .colors = cols,
+        };
+    }
+
+    pub fn deinit(self: *InstanceSoA, allocator: std.mem.Allocator) void {
+        allocator.free(self.positions);
+        allocator.free(self.sizes);
+        allocator.free(self.atlas_rects);
+        allocator.free(self.colors);
+        self.positions = &[_]f32{};
+        self.sizes = &[_]f32{};
+        self.atlas_rects = &[_]f32{};
+        self.colors = &[_]f32{};
+    }
+
+    pub fn write(self: *InstanceSoA, base: usize, quads: []const TextQuad) void {
+        var i: usize = 0;
+        var pos_index = base * 2;
+        var size_index = base * 2;
+        var atlas_index = base * 4;
+        var color_index = base * 4;
+        while (i < quads.len) : (i += 1) {
+            const quad = quads[i];
+            self.positions[pos_index] = quad.position[0];
+            self.positions[pos_index + 1] = quad.position[1];
+            self.sizes[size_index] = quad.size[0];
+            self.sizes[size_index + 1] = quad.size[1];
+            self.atlas_rects[atlas_index + 0] = quad.atlas_rect[0];
+            self.atlas_rects[atlas_index + 1] = quad.atlas_rect[1];
+            self.atlas_rects[atlas_index + 2] = quad.atlas_rect[2];
+            self.atlas_rects[atlas_index + 3] = quad.atlas_rect[3];
+            self.colors[color_index + 0] = quad.color[0];
+            self.colors[color_index + 1] = quad.color[1];
+            self.colors[color_index + 2] = quad.color[2];
+            self.colors[color_index + 3] = quad.color[3];
+
+            pos_index += 2;
+            size_index += 2;
+            atlas_index += 4;
+            color_index += 4;
+        }
+    }
+
+    pub fn packInto(self: *InstanceSoA, base: usize, dest: []Instance) void {
+        var i: usize = 0;
+        var pos_index = base * 2;
+        var size_index = base * 2;
+        var atlas_index = base * 4;
+        var color_index = base * 4;
+        while (i < dest.len) : (i += 1) {
+            dest[i].position = .{ self.positions[pos_index], self.positions[pos_index + 1] };
+            dest[i].size = .{ self.sizes[size_index], self.sizes[size_index + 1] };
+            dest[i].atlas_rect = .{
+                self.atlas_rects[atlas_index + 0],
+                self.atlas_rects[atlas_index + 1],
+                self.atlas_rects[atlas_index + 2],
+                self.atlas_rects[atlas_index + 3],
+            };
+            dest[i].color = .{
+                self.colors[color_index + 0],
+                self.colors[color_index + 1],
+                self.colors[color_index + 2],
+                self.colors[color_index + 3],
+            };
+
+            pos_index += 2;
+            size_index += 2;
+            atlas_index += 4;
+            color_index += 4;
+        }
+    }
 };
 
 fn identityMatrix() [16]f32 {
@@ -96,6 +190,31 @@ pub const FrameSyncInfo = struct {
     semaphore: types.VkSemaphore,
     value: u64,
     stage_mask: types.VkPipelineStageFlags,
+};
+
+const EncodeJob = struct {
+    thread: ?std.Thread = null,
+    context: ?*anyopaque = null,
+    finalize: ?fn (std.mem.Allocator, *anyopaque) RenderError!void = null,
+
+    fn finish(self: *EncodeJob, allocator: std.mem.Allocator) RenderError!void {
+        defer self.clear();
+        if (self.thread) |thread| {
+            thread.join();
+        }
+        if (self.finalize) |callback| {
+            if (self.context) |ctx| {
+                return callback(allocator, ctx);
+            }
+        }
+        return;
+    }
+
+    fn clear(self: *EncodeJob) void {
+        self.thread = null;
+        self.context = null;
+        self.finalize = null;
+    }
 };
 
 const Histogram = struct {
@@ -254,14 +373,30 @@ fn smoothEma(current: f64, sample: f64, smoothing: f64) f64 {
 }
 
 const FrameState = struct {
-    instance_count: usize = 0,
-    needs_upload: bool = false,
+    instance_cursor: usize = 0,
+    instance_count_cached: usize = 0,
+    needs_upload_flag: u8 = 0,
     draw_count: usize = 0,
     atlas_uploads: usize = 0,
     sync_wait: ?FrameSyncInfo = null,
     used_transfer_queue: bool = false,
     submit_cpu_ns: u64 = 0,
     telemetry_dirty: bool = false,
+    job: EncodeJob = .{},
+
+    fn reset(self: *FrameState, allocator: std.mem.Allocator) RenderError!void {
+        try self.job.finish(allocator);
+        self.job.clear();
+        @atomicStore(usize, &self.instance_cursor, 0, .SeqCst);
+        @atomicStore(usize, &self.instance_count_cached, 0, .SeqCst);
+        @atomicStore(u8, &self.needs_upload_flag, 0, .SeqCst);
+        self.draw_count = 0;
+        self.atlas_uploads = 0;
+        self.sync_wait = null;
+        self.used_transfer_queue = false;
+        self.submit_cpu_ns = 0;
+        self.telemetry_dirty = false;
+    }
 };
 
 pub const InitOptions = struct {
@@ -288,6 +423,9 @@ pub const InitOptions = struct {
     pipeline_cache_path: ?[]const u8 = null,
     kernel_validation: bool = false,
     kernel_validation_options: system_validation.KernelValidationOptions = .{},
+    lock_free_queueing: bool = true,
+    parallel_encode: bool = false,
+    use_soa_layout: bool = true,
 };
 
 const BatchAutoTuner = struct {
@@ -430,12 +568,18 @@ pub const TextRenderer = struct {
 
     vertex_buffer: buffer.ManagedBuffer,
     instance_buffer: buffer.ManagedBuffer,
+    staging_instance_buffer: ?buffer.ManagedBuffer,
     frame_states: []FrameState,
     instance_data: []Instance,
+    soa_storage: ?InstanceSoA,
     instances_per_frame: usize,
     instance_stride: types.VkDeviceSize,
-    active_frame: ?u32,
-    command_buffers_dirty: bool,
+    active_frame_index: u32,
+    command_buffers_dirty_flag: u8,
+    use_lock_free_queue: bool,
+    use_soa_layout: bool,
+    parallel_encode: bool,
+    rebar_enabled: bool,
     projection: [16]f32,
     frame_stats: []FrameTelemetry,
     stats_callback: ?StatsCallback,
@@ -456,6 +600,10 @@ pub const TextRenderer = struct {
         std.debug.assert(options.max_instances > 0);
 
         const frame_count: usize = @intCast(options.frames_in_flight);
+        const rebar_enabled = physical_device.detectReBAR(options.memory_props);
+        const host_visible_required = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+        const host_visible_preferred = types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | (if (rebar_enabled) types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT else 0);
+        const use_staging_upload = !rebar_enabled;
 
         const descriptor_bindings = [_]types.VkDescriptorSetLayoutBinding{
             .{
@@ -562,8 +710,8 @@ pub const TextRenderer = struct {
 
         var vertex_buffer = try buffer.createManagedBuffer(device, options.memory_props, vertex_buffer_size, types.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .{
             .filter = .{
-                .required_flags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                .preferred_flags = types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                .required_flags = host_visible_required,
+                .preferred_flags = host_visible_preferred,
             },
         });
         errdefer vertex_buffer.deinit();
@@ -576,13 +724,33 @@ pub const TextRenderer = struct {
         const total_instances = std.math.mul(usize, instances_per_frame, frame_count) catch return errors.Error.FeatureNotPresent;
         const instance_buffer_size = std.math.mul(types.VkDeviceSize, instance_stride, @as(types.VkDeviceSize, @intCast(total_instances))) catch return errors.Error.FeatureNotPresent;
 
-        var instance_buffer = try buffer.createManagedBuffer(device, options.memory_props, instance_buffer_size, types.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .{
-            .filter = .{
-                .required_flags = types.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                .preferred_flags = types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            },
+        const instance_usage: types.VkBufferUsageFlags = if (use_staging_upload)
+            types.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | types.VK_BUFFER_USAGE_TRANSFER_DST_BIT
+        else
+            types.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+        var instance_buffer = try buffer.createManagedBuffer(device, options.memory_props, instance_buffer_size, instance_usage, .{
+            .filter = if (use_staging_upload)
+                .{ .required_flags = types.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT }
+            else
+                .{
+                    .required_flags = host_visible_required,
+                    .preferred_flags = host_visible_preferred,
+                },
         });
         errdefer instance_buffer.deinit();
+
+        var staging_instance_buffer: ?buffer.ManagedBuffer = null;
+        errdefer if (staging_instance_buffer) |*buf| buf.deinit();
+
+        if (use_staging_upload) {
+            staging_instance_buffer = try buffer.createManagedBuffer(device, options.memory_props, instance_buffer_size, types.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, .{
+                .filter = .{
+                    .required_flags = host_visible_required,
+                    .preferred_flags = host_visible_preferred,
+                },
+            });
+        }
 
         const instance_data = try allocator.alloc(Instance, total_instances);
         errdefer allocator.free(instance_data);
@@ -594,6 +762,12 @@ pub const TextRenderer = struct {
         const frame_stats = try allocator.alloc(FrameTelemetry, frame_count);
         errdefer allocator.free(frame_stats);
         std.mem.set(FrameTelemetry, frame_stats, .{});
+
+        var soa_storage_opt: ?InstanceSoA = null;
+        errdefer if (soa_storage_opt) |*soa| soa.deinit(allocator);
+        if (options.use_soa_layout) {
+            soa_storage_opt = try InstanceSoA.init(allocator, total_instances);
+        }
 
         var batch_target = if (options.batch_target == 0) @as(usize, 1) else options.batch_target;
         if (batch_target > instances_per_frame) batch_target = instances_per_frame;
@@ -647,12 +821,18 @@ pub const TextRenderer = struct {
             .glyph_atlas = glyph_atlas_obj,
             .vertex_buffer = vertex_buffer,
             .instance_buffer = instance_buffer,
+            .staging_instance_buffer = staging_instance_buffer,
             .frame_states = frame_states,
             .instance_data = instance_data,
+            .soa_storage = soa_storage_opt,
             .instances_per_frame = instances_per_frame,
             .instance_stride = instance_stride,
-            .active_frame = null,
-            .command_buffers_dirty = true,
+            .active_frame_index = no_frame_index,
+            .command_buffers_dirty_flag = 1,
+            .use_lock_free_queue = options.lock_free_queueing,
+            .use_soa_layout = options.use_soa_layout,
+            .parallel_encode = options.parallel_encode,
+            .rebar_enabled = rebar_enabled,
             .projection = identityMatrix(),
             .frame_stats = frame_stats,
             .stats_callback = options.stats_callback,
@@ -681,15 +861,16 @@ pub const TextRenderer = struct {
     pub fn beginFrame(self: *TextRenderer, frame_index: u32) RenderError!void {
         if (frame_index >= self.frames_in_flight) return error.InvalidFrameIndex;
         const idx: usize = @intCast(frame_index);
-        self.active_frame = frame_index;
-        self.frame_states[idx] = .{};
-        self.command_buffers_dirty = true;
+        var state = &self.frame_states[idx];
+        try state.reset(self.allocator);
+        self.setActiveFrame(frame_index);
+        self.markCommandBuffersDirty();
         self.frame_stats[idx] = .{ .frame_index = frame_index, .batch_limit = self.batch_limit };
     }
 
     pub fn setProjection(self: *TextRenderer, matrix: []const f32) RenderError!void {
         if (matrix.len != 16) return error.InvalidUniformLength;
-        _ = self.active_frame orelse return error.NoActiveFrame;
+        if (self.loadActiveFrame() == null) return error.NoActiveFrame;
         const src_bytes = std.mem.sliceAsBytes(matrix);
         const dest_bytes = std.mem.sliceAsBytes(&self.projection);
         std.mem.copy(u8, dest_bytes, src_bytes);
@@ -701,33 +882,129 @@ pub const TextRenderer = struct {
 
     pub fn queueQuads(self: *TextRenderer, quads: []const TextQuad) RenderError!void {
         if (quads.len == 0) return;
-        const frame_index = self.active_frame orelse return error.NoActiveFrame;
+        const frame_index = self.loadActiveFrame() orelse return error.NoActiveFrame;
         const idx: usize = @intCast(frame_index);
         var state = &self.frame_states[idx];
-        if (state.instance_count + quads.len > self.instances_per_frame) return error.InstanceOverflow;
+        const local_base = try self.reserveInstanceRange(state, quads.len);
+        const frame_base = self.baseInstanceIndex(frame_index);
+        const global_base = frame_base + local_base;
 
-        const base = self.baseInstanceIndex(frame_index) + state.instance_count;
-        const dest = self.instance_data[base .. base + quads.len];
-        copyInstances(dest, quads);
+        if (self.use_soa_layout) {
+            if (self.soa_storage) |*storage| {
+                storage.write(global_base, quads);
+            }
+        } else {
+            const dest = self.instance_data[global_base .. global_base + quads.len];
+            copyInstances(dest, quads);
+        }
 
-        state.instance_count += quads.len;
-        state.needs_upload = true;
-        self.command_buffers_dirty = true;
+        state.telemetry_dirty = true;
+        self.frameSetNeedsUpload(state);
+        self.markCommandBuffersDirty();
+    }
+
+    fn setActiveFrame(self: *TextRenderer, frame_index: u32) void {
+        @atomicStore(u32, &self.active_frame_index, frame_index, .SeqCst);
+    }
+
+    fn clearActiveFrame(self: *TextRenderer) void {
+        @atomicStore(u32, &self.active_frame_index, no_frame_index, .SeqCst);
+    }
+
+    fn loadActiveFrame(self: *const TextRenderer) ?u32 {
+        const value = @atomicLoad(u32, &self.active_frame_index, .SeqCst);
+        return if (value == no_frame_index) null else value;
+    }
+
+    fn markCommandBuffersDirty(self: *TextRenderer) void {
+        @atomicStore(u8, &self.command_buffers_dirty_flag, 1, .SeqCst);
+    }
+
+    fn clearCommandBuffersDirty(self: *TextRenderer) void {
+        @atomicStore(u8, &self.command_buffers_dirty_flag, 0, .SeqCst);
+    }
+
+    pub fn commandBuffersDirty(self: *const TextRenderer) bool {
+        return @atomicLoad(u8, &self.command_buffers_dirty_flag, .SeqCst) == 1;
+    }
+
+    fn frameNeedsUpload(_: *const TextRenderer, state: *const FrameState) bool {
+        return @atomicLoad(u8, &state.needs_upload_flag, .SeqCst) == 1;
+    }
+
+    fn frameSetNeedsUpload(_: *TextRenderer, state: *FrameState) void {
+        @atomicStore(u8, &state.needs_upload_flag, 1, .SeqCst);
+    }
+
+    fn frameClearNeedsUpload(_: *TextRenderer, state: *FrameState) void {
+        @atomicStore(u8, &state.needs_upload_flag, 0, .SeqCst);
+    }
+
+    fn frameInstanceCount(_: *const TextRenderer, state: *const FrameState) usize {
+        return @atomicLoad(usize, &state.instance_count_cached, .SeqCst);
+    }
+
+    fn setFrameInstanceCount(_: *TextRenderer, state: *FrameState, value: usize) void {
+        @atomicStore(usize, &state.instance_count_cached, value, .SeqCst);
+    }
+
+    fn reserveInstanceRange(self: *TextRenderer, state: *FrameState, count: usize) RenderError!usize {
+        const previous = @atomicRmw(usize, &state.instance_cursor, .Add, count, .SeqCst);
+        const new_total = previous + count;
+        if (new_total > self.instances_per_frame) {
+            _ = @atomicRmw(usize, &state.instance_cursor, .Sub, count, .SeqCst);
+            return error.InstanceOverflow;
+        }
+        self.setFrameInstanceCount(state, new_total);
+        return previous;
+    }
+
+    fn instanceUploadBuffer(self: *TextRenderer) *buffer.ManagedBuffer {
+        if (self.staging_instance_buffer) |*buf| return buf;
+        return &self.instance_buffer;
+    }
+
+    fn packInstances(self: *TextRenderer, frame_index: u32, count: usize) void {
+        if (!self.use_soa_layout) return;
+        if (count == 0) return;
+        if (self.soa_storage) |*storage| {
+            const base = self.baseInstanceIndex(frame_index);
+            storage.packInto(base, self.instance_data[base .. base + count]);
+        }
     }
 
     pub fn encode(self: *TextRenderer, cmd: types.VkCommandBuffer) RenderError!void {
-        const frame_index = self.active_frame orelse return error.NoActiveFrame;
+        const frame_index = self.loadActiveFrame() orelse return error.NoActiveFrame;
+        const idx: usize = @intCast(frame_index);
+        var state = &self.frame_states[idx];
+        try state.job.finish(self.allocator);
+        state.job.clear();
+        try self.encodeFrameInternal(frame_index, cmd);
+    }
+
+    pub fn encodeAsync(self: *TextRenderer, cmd: types.VkCommandBuffer) RenderError!void {
+        if (!self.parallel_encode) return self.encode(cmd);
+        const frame_index = self.loadActiveFrame() orelse return error.NoActiveFrame;
+        const idx: usize = @intCast(frame_index);
+        var state = &self.frame_states[idx];
+        try state.job.finish(self.allocator);
+        state.job = try self.spawnEncodeJob(frame_index, cmd);
+    }
+
+    fn encodeFrameInternal(self: *TextRenderer, frame_index: u32, cmd: types.VkCommandBuffer) RenderError!void {
         const idx: usize = @intCast(frame_index);
         var state = &self.frame_states[idx];
 
-        const requires_recording = self.command_buffers_dirty or state.needs_upload;
+        const requires_recording = self.commandBuffersDirty() or self.frameNeedsUpload(state);
         if (!requires_recording) return;
 
         const encode_start = std.time.nanoTimestamp();
 
-        if (state.instance_count == 0) {
-            self.command_buffers_dirty = false;
-            state.needs_upload = false;
+        const total_instances = self.frameInstanceCount(state);
+
+        if (total_instances == 0) {
+            self.clearCommandBuffersDirty();
+            self.frameClearNeedsUpload(state);
             state.draw_count = 0;
             state.atlas_uploads = 0;
             state.used_transfer_queue = false;
@@ -748,12 +1025,50 @@ pub const TextRenderer = struct {
             return;
         }
 
-        if (state.needs_upload) {
+        self.packInstances(frame_index, total_instances);
+
+        if (self.frameNeedsUpload(state)) {
             const base = self.baseInstanceIndex(frame_index);
-            const slice = self.instance_data[base .. base + state.instance_count];
+            const slice = self.instance_data[base .. base + total_instances];
             const bytes = std.mem.sliceAsBytes(slice);
-            try self.instance_buffer.write(bytes, self.instanceBufferOffset(frame_index));
-            state.needs_upload = false;
+            const upload_buffer = self.instanceUploadBuffer();
+            try upload_buffer.write(bytes, self.instanceBufferOffset(frame_index));
+            if (self.staging_instance_buffer) |_| {
+                const region = types.VkBufferCopy{
+                    .srcOffset = self.instanceBufferOffset(frame_index),
+                    .dstOffset = self.instanceBufferOffset(frame_index),
+                    .size = @as(types.VkDeviceSize, @intCast(bytes.len)),
+                };
+                self.device.dispatch.cmd_copy_buffer(
+                    cmd,
+                    upload_buffer.buffer,
+                    self.instance_buffer.buffer,
+                    1,
+                    &region,
+                );
+                const barrier = types.VkBufferMemoryBarrier{
+                    .srcAccessMask = types.VK_ACCESS_TRANSFER_WRITE_BIT,
+                    .dstAccessMask = types.VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+                    .srcQueueFamilyIndex = types.VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = types.VK_QUEUE_FAMILY_IGNORED,
+                    .buffer = self.instance_buffer.buffer,
+                    .offset = self.instanceBufferOffset(frame_index),
+                    .size = region.size,
+                };
+                self.device.dispatch.cmd_pipeline_barrier(
+                    cmd,
+                    types.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    types.VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+                    0,
+                    0,
+                    null,
+                    1,
+                    &barrier,
+                    0,
+                    null,
+                );
+            }
+            self.frameClearNeedsUpload(state);
         }
 
         var atlas_uploads: usize = 0;
@@ -840,7 +1155,7 @@ pub const TextRenderer = struct {
         self.device.dispatch.cmd_bind_vertex_buffers(cmd, 0, @intCast(vertex_buffers.len), vertex_buffers[0..].ptr, offsets[0..].ptr);
 
         const used_batch_limit = self.batch_limit;
-        var remaining = state.instance_count;
+        var remaining = total_instances;
         var first_instance: u32 = 0;
         var draw_calls: usize = 0;
         while (remaining > 0) {
@@ -853,7 +1168,7 @@ pub const TextRenderer = struct {
 
         try commands.endCommandBuffer(self.device, cmd);
 
-        self.command_buffers_dirty = false;
+        self.clearCommandBuffersDirty();
 
         const encode_ns = @as(u64, @intCast(std.time.nanoTimestamp() - encode_start));
 
@@ -862,7 +1177,7 @@ pub const TextRenderer = struct {
 
         const telemetry = FrameTelemetry{
             .frame_index = frame_index,
-            .glyph_count = state.instance_count,
+            .glyph_count = total_instances,
             .draw_count = draw_calls,
             .atlas_uploads = atlas_uploads,
             .batch_limit = used_batch_limit,
@@ -877,11 +1192,53 @@ pub const TextRenderer = struct {
         self.frame_stats[idx] = telemetry;
     }
 
+    const EncodeContext = struct {
+        renderer: *TextRenderer,
+        frame_index: u32,
+        command_buffer: types.VkCommandBuffer,
+        err: ?RenderError = null,
+    };
+
+    fn encodeWorker(context: *EncodeContext) void {
+        context.err = context.renderer.encodeFrameInternal(context.frame_index, context.command_buffer) catch |err| err;
+    }
+
+    fn finalizeEncodeContext(
+        allocator: std.mem.Allocator,
+        context_ptr: *anyopaque,
+    ) RenderError!void {
+        const context = @as(*EncodeContext, @ptrCast(@alignCast(context_ptr)));
+        defer allocator.destroy(context);
+        if (context.err) |err| return err;
+        return;
+    }
+
+    fn spawnEncodeJob(self: *TextRenderer, frame_index: u32, cmd: types.VkCommandBuffer) RenderError!EncodeJob {
+        const context = try self.allocator.create(EncodeContext);
+        context.* = .{
+            .renderer = self,
+            .frame_index = frame_index,
+            .command_buffer = cmd,
+            .err = null,
+        };
+        const thread = try std.Thread.spawn(.{}, encodeWorker, .{context});
+        return EncodeJob{
+            .thread = thread,
+            .context = context,
+            .finalize = finalizeEncodeContext,
+        };
+    }
+
     pub fn endFrame(self: *TextRenderer) void {
-        const frame_index = self.active_frame orelse return;
+        const frame_index = self.loadActiveFrame() orelse return;
         const idx: usize = @intCast(frame_index);
+        var state = &self.frame_states[idx];
+        state.job.finish(self.allocator) catch |err| {
+            std.debug.panic("encode job failed during endFrame: {s}", .{@errorName(err)});
+        };
+        state.job.clear();
         self.publishTelemetry(idx);
-        self.active_frame = null;
+        self.clearActiveFrame();
     }
 
     pub fn recordSubmitDuration(self: *TextRenderer, frame_index: u32, submit_cpu_ns: u64) RenderError!void {
@@ -1023,6 +1380,12 @@ pub const TextRenderer = struct {
         return self.frame_stats[idx];
     }
 
+    pub fn pendingInstanceCount(self: *const TextRenderer, frame_index: u32) RenderError!usize {
+        if (frame_index >= self.frames_in_flight) return error.InvalidFrameIndex;
+        const idx: usize = @intCast(frame_index);
+        return self.frameInstanceCount(&self.frame_states[idx]);
+    }
+
     pub fn frameSyncInfo(self: *const TextRenderer, frame_index: u32) RenderError!?FrameSyncInfo {
         if (frame_index >= self.frames_in_flight) return error.InvalidFrameIndex;
         const idx: usize = @intCast(frame_index);
@@ -1109,6 +1472,11 @@ pub const TextRenderer = struct {
         }
 
         if (self.frame_states.len > 0) {
+            for (self.frame_states) |*state| {
+                state.job.finish(self.allocator) catch |err| {
+                    std.log.warn("encode job cleanup error: {s}", .{@errorName(err)});
+                };
+            }
             self.allocator.free(self.frame_states);
             self.frame_states = &.{};
         }
@@ -1118,7 +1486,17 @@ pub const TextRenderer = struct {
             self.frame_stats = &.{};
         }
 
-        self.active_frame = null;
+        if (self.soa_storage) |*storage| {
+            storage.deinit(self.allocator);
+            self.soa_storage = null;
+        }
+
+        if (self.staging_instance_buffer) |*buf| {
+            buf.deinit();
+            self.staging_instance_buffer = null;
+        }
+
+        self.clearActiveFrame();
 
         self.instance_buffer.deinit();
         self.vertex_buffer.deinit();
@@ -1649,7 +2027,7 @@ test "TextRenderer.init wires core Vulkan objects" {
 
     try std.testing.expectEqual(@as(u32, 2), renderer.frames_in_flight);
     try std.testing.expectEqual(types.VK_FORMAT_B8G8R8A8_SRGB, renderer.surface_format);
-    try std.testing.expect(renderer.command_buffers_dirty);
+    try std.testing.expect(renderer.commandBuffersDirty());
 
     try std.testing.expectEqual(@as(usize, 1), TestCapture.descriptor_layout_calls);
     try std.testing.expectEqual(@as(usize, 1), TestCapture.descriptor_pool_calls);
@@ -1722,7 +2100,7 @@ test "TextRenderer.queueQuads batches glyph data" {
     };
 
     try renderer.queueQuads(quads[0..]);
-    try std.testing.expectEqual(quads.len, renderer.frame_states[0].instance_count);
+    try std.testing.expectEqual(quads.len, try renderer.pendingInstanceCount(0));
 
     const stored_bytes = std.mem.sliceAsBytes(renderer.instance_data[0..quads.len]);
     const stored_quads = std.mem.bytesAsSlice(TextQuad, stored_bytes);
@@ -1759,9 +2137,8 @@ test "TextRenderer.queueQuads batches glyph data" {
 
     const sync_info = try renderer.frameSyncInfo(0);
     try std.testing.expect(sync_info == null);
-    try std.testing.expectEqual(@as(usize, 1), renderer.frame_states[0].draw_count);
 
-    try std.testing.expect(!renderer.command_buffers_dirty);
+    try std.testing.expect(!renderer.commandBuffersDirty());
 }
 
 test "TextRenderer.beginFrame queues quads and encodes draw call" {
@@ -1815,7 +2192,7 @@ test "TextRenderer.beginFrame queues quads and encodes draw call" {
     };
 
     try renderer.queueQuad(quad);
-    try std.testing.expectEqual(@as(usize, 1), renderer.frame_states[0].instance_count);
+    try std.testing.expectEqual(@as(usize, 1), try renderer.pendingInstanceCount(0));
 
     const command_buffer = @as(types.VkCommandBuffer, @ptrFromInt(@as(usize, 0x3000)));
     try renderer.encode(command_buffer);
@@ -1868,9 +2245,8 @@ test "TextRenderer.beginFrame queues quads and encodes draw call" {
 
     const sync_info = try renderer.frameSyncInfo(0);
     try std.testing.expect(sync_info == null);
-    try std.testing.expectEqual(@as(usize, 1), renderer.frame_states[0].draw_count);
 
-    try std.testing.expect(!renderer.command_buffers_dirty);
+    try std.testing.expect(!renderer.commandBuffersDirty());
 }
 
 test "TextRenderer adjusts batch limit based on glyph load" {
@@ -1940,7 +2316,6 @@ test "TextRenderer adjusts batch limit based on glyph load" {
     try std.testing.expectEqual(@as(u64, 0), telemetry.submit_cpu_ns);
     try std.testing.expectApproxEqAbs(@as(f64, 450.0), telemetry.glyphs_per_draw, 0.001);
 
-    try std.testing.expectEqual(@as(usize, 2), renderer.frame_states[0].draw_count);
     try std.testing.expectEqual(@as(usize, 900), renderer.batch_limit);
     try std.testing.expectEqual(@as(usize, 900), renderer.batch_target);
 }

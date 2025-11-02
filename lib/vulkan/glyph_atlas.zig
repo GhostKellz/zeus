@@ -196,11 +196,8 @@ pub const GlyphAtlas = struct {
 
         const rect = try self.reserveRect(metrics.size);
         const pixel_count = @as(usize, rect.size.width) * @as(usize, rect.size.height);
-        const pixels = try self.allocator.alloc(u8, pixel_count);
-        defer self.allocator.free(pixels);
 
         const request = RasterRequest{ .key = key, .size = metrics.size };
-        try self.rasterizer(self.raster_context, request, pixels);
 
         var staging = try buffer.createManagedBuffer(
             self.device,
@@ -215,8 +212,13 @@ pub const GlyphAtlas = struct {
             },
         );
         errdefer staging.deinit();
-
-        try staging.write(pixels, 0);
+        {
+            const map_ptr = try staging.map(0, @intCast(pixel_count));
+            const mapped = map_ptr[0..pixel_count];
+            try self.rasterizer(self.raster_context, request, mapped);
+            try staging.flushRange(0, @as(types.VkDeviceSize, @intCast(pixel_count)));
+            staging.unmap();
+        }
 
         try self.pending_uploads.append(.{ .staging = staging, .rect = rect });
 

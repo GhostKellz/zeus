@@ -67,8 +67,18 @@ pub const ManagedBuffer = struct {
         self.allocation.unmap();
     }
 
-    fn isCoherent(self: *ManagedBuffer) bool {
+    pub fn isCoherent(self: *ManagedBuffer) bool {
         return (self.memory_flags & types.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
+    }
+
+    pub fn flushRange(self: *ManagedBuffer, offset: types.VkDeviceSize, size: types.VkDeviceSize) errors.Error!void {
+        if (self.isCoherent()) return;
+        const range = types.VkMappedMemoryRange{
+            .memory = self.allocation.memory.?,
+            .offset = offset,
+            .size = size,
+        };
+        try self.allocation.flush(&.{range});
     }
 
     fn ensureMapped(self: *ManagedBuffer, offset: types.VkDeviceSize, length: usize) errors.Error!struct {
