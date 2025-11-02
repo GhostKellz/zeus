@@ -276,6 +276,55 @@ const uv = rect.toUV(atlas_width, atlas_height);
 
 ---
 
+## 🎉 What's New in v0.1.4
+
+**Released: December 2024** - Advanced memory management, performance optimizations, and developer tools
+
+### Memory Management
+- **VMA-style allocator** with sub-allocation and automatic ReBAR detection for NVIDIA RTX 4090
+- **Buffer/image allocators** with automatic memory binding and layout tracking
+- **Built-in telemetry** for fragmentation and leak detection
+
+### Command & Synchronization
+- **Command manager** with per-thread pool recycling for parallel command buffer recording
+- **Sync manager** with fence/semaphore pooling and timeline semaphore support
+- **Barrier helper** for automatic pipeline stage and access mask inference
+
+### Builders & Helpers
+- **Descriptor allocator** with automatic pool growth when exhausted
+- **Transfer helper** for async buffer/image uploads on dedicated transfer queue
+- **Immediate submit helper** for convenient one-shot command submission
+- **Pipeline builders** with fluent API for graphics and compute pipelines
+- **Render pass builder** with automatic subpass dependency inference
+- **Framebuffer manager** with swapchain integration
+
+### Performance & Hardware
+- **HDR support** (`VK_EXT_hdr_metadata`) for OLED displays with BT.2020 primaries
+- **VRR/Adaptive sync** for 240-360Hz high refresh rate displays with frame pacing
+- **Wayland DMA-BUF** import/export for zero-copy composition with KDE Plasma/Mutter/wlroots
+- **NVIDIA optimizations** for RTX 4090: ReBAR hints, async compute queue utilization
+
+### Developer Experience
+- **Debug utilities** for object naming, markers, and labels (RenderDoc/validation layers)
+- **Enhanced error context** with call sites and recovery strategies
+- **Comprehensive error descriptions** and suggested solutions
+
+### Known Issues & Workarounds
+
+**MangoHud Compatibility:** Tests may crash when MangoHud overlay is active. This is a known issue with MangoHud hooking device creation. Workaround:
+```bash
+# Run tests without MangoHud
+DISABLE_MANGOHUD=1 zig build test
+
+# Or disable MangoHud globally
+unset MANGOHUD
+unset MANGOHUD_CONFIG
+```
+
+**Migration from v0.1.3:** Most applications will need minimal changes. The new allocators and builders are opt-in and existing code continues to work.
+
+---
+
 ## 🏗️ Roadmap
 
 See [`TODO.md`](TODO.md) for the complete 8-phase roadmap. Quick summary:
