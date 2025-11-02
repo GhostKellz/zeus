@@ -1,548 +1,197 @@
-# Zeus Vulkan Library - Development Roadmap
+# Zeus Vulkan Library – Phase 9–18 Roadmap
 
-**Status:** Phase 8 In Progress 🚀 | Wayland Compositor Compatibility Complete ✅ | Ready for Integration Testing
+**Status:** Phase 8 Complete ✅ | Wayland compositor compatibility shipped | Focus: Integration & release readiness
 
-**Target:** Production-ready Vulkan text rendering for Grim editor on NVIDIA + Wayland @ 144-360Hz
-
----
-
-## Phase 1: Core Vulkan Foundations  COMPLETE
-
-### Dynamic Loader & Type System
-- [x] Dynamic library loading (`libvulkan.so`, `vulkan-1.dll`, `libvulkan.dylib`)
-- [x] Function pointer tables (instance-level, device-level)
-- [x] `vkGetInstanceProcAddr` / `vkGetDeviceProcAddr` dispatch
-- [x] Core Vulkan types (handles, enums, flags, structs)
-- [x] VkResult � Zig error mapping
-- [x] Bitfield helpers with packed structs
-
-**Deliverables:** `loader.zig`, `types.zig`, `error.zig`
-**Line Count:** ~1,530 lines
-**Test Coverage:**  Unit tests passing
+**Reference Stack:** `PHASE8_SUMMARY.md`, `docs/WAYLAND_COMPOSITOR_COMPATIBILITY.md`, `REFERENCE_MATERIAL.md`
 
 ---
 
-## Phase 2: Instance, Device & Surface  COMPLETE
+## Phase 9 · Integration Test Gauntlet (⚙️ Active)
 
-### Vulkan Device Setup
-- [x] Instance creation with validation layers (debug builds)
-- [x] Physical device enumeration and selection
-- [x] Queue family discovery (graphics, present, transfer)
-- [x] Logical device creation
-- [x] Extension enumeration and enabling
-- [x] Feature checking (VkPhysicalDeviceFeatures)
-- [x] Debug messenger (VK_EXT_debug_utils)
+### Objectives
+- Simulate Grim’s production workloads under Zig 0.16.
+- Establish reproducible long-run stability and memory safety checks.
+- Capture frame pacing and glyph throughput metrics under stress.
 
-### Surface & Presentation
-- [x] Surface creation (Wayland, X11, Windows, macOS)
-- [x] Surface format selection
-- [x] Present mode selection (fifo, mailbox, immediate)
-- [x] Swapchain creation (VK_KHR_swapchain)
-- [x] Image acquisition / present queue submission
-- [x] Swapchain recreation on resize
+### Tasks
+- [ ] Stand up `tests/integration/` harness with deterministic repro seeds.
+- [ ] Author `grim_rendering_pattern_test.zig` (10k glyph burst + atlas churn).
+- [ ] Add swapchain resize & recreation regression (`swapchain_recreation_test.zig`).
+- [ ] Integrate leak detector + valgrind hooks for 1k-frame burn-in.
+- [ ] Produce `docs/testing/integration.md` with run/triage instructions.
 
-**Deliverables:** `instance.zig`, `device.zig`, `physical_device.zig`, `surface.zig`, `swapchain.zig`
-**Line Count:** ~1,160 lines
-**Test Coverage:**  Unit tests passing
+### Deliverables
+- Integration test suite, CLI entry (`zig build integration-test`).
+- Metrics export JSON for later perf diffing.
 
 ---
 
-## Phase 3: Resource Management  COMPLETE
+## Phase 10 · Grim Embedding & API Hardening (🚀 Next Up)
 
-### Memory & Buffers
-- [x] Memory type selection (device-local, host-visible, etc.)
-- [x] Memory pool allocator for small allocations
-- [x] Buffer creation (vertex, index, uniform, staging)
-- [x] Buffer memory binding
-- [x] Transfer queue operations
-- [x] Buffer copying and updates
-- [x] Dynamic uniform buffers
+### Objectives
+- Finalize the public Zig API consumed by Grim.
+- Provide ergonomic helpers and migration docs from the Grim prototype bindings.
+- Validate compositor quirks flow inside Grim’s render loop.
 
-### Images & Samplers
-- [x] Image creation (2D textures, render targets)
-- [x] Image view creation
-- [x] Image layout transitions
-- [x] Sampler creation (linear, nearest, anisotropic)
-- [x] Format support queries
-- [x] Barrier types (memory, buffer, image)
-- [x] Pipeline stage/access flags
+### Tasks
+- [ ] Publish `docs/API.md` covering public structs, error sets, and lifecycles.
+- [ ] Ship `examples/grim_embed.zig` showing full init → frame → teardown.
+- [ ] Harden error propagation (`errors.ensureSuccess` → dedicated error unions).
+- [ ] Lock down allocator & threading contracts (documented + tested).
+- [ ] Align compositor quirks plumbing with Grim configuration pipeline.
 
-### Descriptors
-- [x] Descriptor pool creation
-- [x] Descriptor set layout creation
-- [x] Descriptor set allocation
-- [x] Descriptor writes (buffers, images)
-- [x] Descriptor caching
-
-**Deliverables:** `memory.zig`, `buffer.zig`, `image.zig`, `sampler.zig`, `descriptor.zig`
-**Line Count:** ~1,850 lines
-**Test Coverage:**  Unit tests passing
+### Deliverables
+- Public header docs, sample embedding project, Grim integration checklist.
 
 ---
 
-## Phase 4: Render Pipeline  COMPLETE
+## Phase 11 · Toolchain & Zig 0.16 Stabilization (🛠️ In Planning)
 
-### Shaders & Pipeline Creation
-- [x] SPIR-V shader module loading from embedded bytecode
-- [x] Shader module creation
-- [x] Shader stage info builders
-- [x] Render pass creation
-- [x] Attachment descriptions
-- [x] Subpass dependencies
-- [x] Framebuffer creation
+### Objectives
+- Eliminate remaining deprecated std APIs (`std.mem.fill`, `std.meta.errorSetUnion`, etc.).
+- Update loader + error surfaces for Zig 0.16 switch semantics.
+- Ensure build/test runs on nightly + forthcoming stable 0.16 release.
 
-### Graphics Pipeline
-- [x] Pipeline layout creation
-- [x] Graphics pipeline creation
-- [x] Vertex input state (instanced rendering)
-- [x] Input assembly state
-- [x] Rasterization state
-- [x] Multisample state
-- [x] Blend state (alpha blending)
-- [x] Dynamic state (viewport, scissor)
-- [x] Pipeline cache support
+### Tasks
+- [ ] Replace legacy mem helpers with 0.16 equivalents (`std.mem.zeroes`, custom fillers).
+- [ ] Refactor loader error handling to new `switch` + `error{}` idioms.
+- [ ] Audit pointer qualifiers (`*`, `?*`, `[*]`) across Vulkan stubs.
+- [ ] Update `build.zig` to enforce Zig ≥ 0.16.0-dev.200.
+- [ ] Refresh CI scripts / local tooling to pin compiler hash.
 
-### Command Buffers & Synchronization
-- [x] Command pool creation (per-thread pools)
-- [x] Command buffer allocation
-- [x] Command buffer recording helpers
-- [x] Command buffer submission
-- [x] Fence creation and waiting
-- [x] Semaphore creation and signaling
-- [x] Pipeline barriers
-- [x] Memory barriers
-
-**Deliverables:** `shader.zig`, `render_pass.zig`, `pipeline.zig`, `commands.zig`, `sync.zig`
-**Line Count:** ~1,280 lines
-**Test Coverage:**  Unit tests passing
+### Deliverables
+- "Green" `zig test` across modules, compatibility note in `README.md`.
 
 ---
 
-## Phase 5: Text Renderer Integration  COMPLETE
+## Phase 12 · Performance Regression Harness (📊 Planned)
 
-### Glyph Atlas Management
-- [x] Dynamic atlas texture (growable)
-- [x] Glyph rectangle packing algorithm
-- [x] Atlas texture upload to GPU
-- [x] Overflow guards and growth callbacks
-- [x] R8_UNORM format support (grayscale alpha)
-- [x] Padding support for glyph isolation
+### Objectives
+- Track encode/submit timing deltas across versions and hardware.
+- Automate perf budgeting for 144/240/360 Hz targets.
+- Surface regressions early via dashboards.
 
-### Text Rendering Pipeline
-- [x] `TextRenderer` struct with full lifecycle
-- [x] Instanced quad rendering
-- [x] Per-glyph vertex generation
-- [x] Uniform buffer for projection matrix
-- [x] Alpha blending for antialiasing
-- [x] Frame API (`beginFrame`, `queueQuad`, `encode`, `endFrame`)
-- [x] Dynamic viewport/scissor management
-- [x] Per-frame CPU storage with safe uploads
-- [x] Pipeline/descriptor binding automation
+### Tasks
+- [ ] Build `tools/perf-runner.zig` with JSON + CSV outputs.
+- [ ] Record baseline metrics (RTX 4090, KDE Plasma 360 Hz).
+- [ ] Add tolerance thresholds + alerting diff script.
+- [ ] Integrate perf run into nightly cron (manual for now, CI later).
+- [ ] Document workflow in `docs/performance.md` (link to Profiling § in reference material).
 
-### Shaders
-- [x] Vertex shader (`shaders/text.vert`)
-  - Quad vertex generation from instance data
-  - Screen-space transformation
-  - UV coordinate calculation
-- [x] Fragment shader (`shaders/text.frag`)
-  - Atlas texture sampling
-  - Alpha blending
-  - Color modulation
-- [x] SPIR-V compilation and embedding (`@embedFile`)
-
-**Deliverables:** `text_renderer.zig`, `glyph_atlas.zig`, `shaders/text.{vert,frag}.spv`
-**Line Count:** ~998 lines (text_renderer + glyph_atlas)
-**Test Coverage:**  End-to-end frame API test passing
-
-**Current Total:** ~6,818 lines across 22 modules
+### Deliverables
+- Baseline perf dataset, automation scripts, documentation.
 
 ---
 
-## Phase 6: High Refresh Rate Optimization =� NEXT
+## Phase 13 · Telemetry & Observability 2.0 (🔍 Planned)
 
-### Current Sprint Focus (Nov 2025)
-- [x] Instanced rendering batch size tuning → instrument glyph/draw ratios and auto-tune per-frame batch limits (`TextRenderer.updateAutoBatching`, profiler HUD glyph ratios ✅ Nov 2025)
-- [x] Atlas upload pipeline barrier audit → collapse redundant barriers and tighten stage/access masks (`GlyphAtlas.recordUploads` single transition ✅ Nov 2025)
-- [x] Transfer queue async path → stage atlas uploads on dedicated queue gated by timeline semaphores (`TransferQueueOptions` + timeline waits ✅ Nov 2025)
-- [x] Frame pacing telemetry → record encode/submit durations and surface stats via CLI/debug overlay (`FrameTelemetry.submit_cpu_ns`, HUD submit metrics ✅ Nov 2025)
+### Objectives
+- Expand runtime telemetry for encode/submit, queue depth, atlas health.
+- Provide optional HUD + CLI exporters for Grim developers.
 
-### Target Performance Metrics
-- **144Hz @ 1440p** - 6.9ms frame budget (minimum viable)
-- **240Hz @ 1440p** - 4.16ms frame budget (target)
-- **270Hz @ 1440p** - 3.7ms frame budget (stretch goal)
-- **360Hz @ 1440p** - 2.77ms frame budget (competitive gaming)
-- **240Hz @ 4K** - 4.16ms frame budget (future hardware)
+### Tasks
+- [ ] Extend `frame_pacing.FramePacer` with adaptive smoothing + histograms.
+- [ ] Emit structured telemetry via `std.log.ScopedJSON` or similar.
+- [ ] Build lightweight HUD overlay (toggle via API) for glyph throughput insights.
+- [ ] Add exporter hooks (e.g., write to Prometheus/OpenMetrics file).
+- [ ] Update `docs/telemetry.md` with usage + integration recipes.
 
-### Frame Pacing & VSync Control
-- [x] Frame time tracking and telemetry
-- [x] Adaptive VSync (VK_PRESENT_MODE_FIFO_RELAXED_KHR)
-- [x] Mailbox mode for triple buffering (VK_PRESENT_MODE_MAILBOX_KHR)
-- [x] Immediate mode for latency-sensitive scenarios
-- [x] Frame rate limiter (cap at 144/240/270/360 Hz)
-- [x] Present timing extension (VK_GOOGLE_display_timing)
-- [x] Wayland presentation time feedback
-
-### GPU Optimization
-- [x] Command buffer pre-recording and reuse
-- [x] Descriptor set caching (avoid redundant updates)
-- [x] Push constants for per-draw data (vs uniform buffers)
-  - Projection now pushed per draw; update `TextRenderer` docs/tests to reflect push-constant APIs (✅ Oct 2025)
-- [x] Instanced rendering batch size tuning **(current focus)**
-  - [x] Instrument per-frame draw count vs glyph count; target ≤1 draw/512 glyphs while holding atlas residency (`ProfilerSummary.glyphs_per_draw`, FrameTelemetry ratios ✅ Nov 2025)
-  - [x] Auto-adjust batch size based on `max_instances` and swapchain extent to avoid overflow (`TextRenderer.updateAutoBatching` feedback loop ✅ Nov 2025)
-- [x] Pipeline barrier optimization (minimize stalls) **(current focus)**
-  - [x] Audit current atlas upload barriers; collapse into single image barrier per frame where possible (verified single `ensureLayout` invocation ✅ Nov 2025)
-  - [x] Replace full pipeline sync with stage-specific flags (`TRANSFER`→`FRAGMENT`) (already using scoped stage/access masks ✅ Nov 2025)
-- [x] Transfer queue utilization (background atlas uploads) **(current focus)**
-  - [x] Optional transfer queue submission path for atlas uploads (synchronous baseline)
-  - [x] Prototype staging copies on transfer queue with timeline semaphores gating graphics usage (`TransferSubmission` timeline wiring exercised in tests ✅ Nov 2025)
-  - [x] Defer atlas transitions until just before draw during encode step (graphics path only transitions when uploads pending ✅ Nov 2025)
-- [x] NVIDIA-specific optimizations (see `REFERENCE_MATERIAL.md` §1)
-  - [x] ReBAR detection for large host-visible allocations (RTX 4090 optimization)
-    - [x] `physical_device.Selection.hasReBAR()` helper with >256MB host-visible device-local threshold
-    - [x] Scoped memory logs highlighting ReBAR vs staging strategies during allocations
-  - [x] Memory allocation flags (device-local + host-visible preferred) - ReBAR-aware staging buffers in text_renderer.zig:605 + glyph_atlas.zig:210 ✅ Nov 2025
-  - [x] Pipeline cache warming (precompile + serialize cache blobs after first run) (`pipeline_cache.PipelineCache.persist` + renderer test ✅ Nov 2025)
-  - [x] Async compute queue usage evaluation - DEFERRED (see archive/async_compute_evaluation.md; prioritize CPU parallelism instead) ✅ Nov 2025
-  - [x] DRM modesetting validation for 144-360Hz displays (`system_validation.logDrmHighRefresh` logging ✅ Nov 2025)
-
-### CPU Optimization
-- [ ] Parallel command buffer recording (multi-threaded)
-- [ ] Lock-free frame data structures
-- [x] SIMD glyph quad batching (see `REFERENCE_MATERIAL.md` §3.2)
-  - [x] AVX2-accelerated slice uploads via `TextRenderer.queueQuads`
-  - [x] Batch submission API for precomputed glyph quads
-  - [ ] Additional SoA layout exploration for further cache wins
-- [ ] Cache-friendly memory layout (SoA vs AoS)
-  - Profile `TextRenderer.queueQuads` cache misses with perf; experiment with AoS→SoA conversion tables
-- [ ] Zero-copy glyph data paths
-  - Investigate mapping atlas staging buffers directly into FreeType raster output to avoid memcpy
-- [ ] Reduced allocations in hot paths
-  - Pool `TextQuad` scratch buffers per frame; benchmark allocator pressure pre/post
-
-### Code Quality & Validation
-- [x] Verify SPIR-V 4-byte alignment (see `REFERENCE_MATERIAL.md` §2.2)
-  - [x] Ensure `@embedFile` shader bytecode is properly aligned
-  - [x] Compile-time assertions guarding shader slices in `text_renderer.zig`
-  - [x] Alignment regression test in `shader.zig`
-- [x] Kernel parameter validation (`system_validation.validateKernelParameters` + boot log wiring ✅ Nov 2025)
-  - [x] Confirm `vm.max_map_count=16777216` for descriptor sets
-  - [x] Verify BORE scheduler active (`kernel.sched_bore=1`)
-  - [x] Check ReBAR enabled in BIOS/UEFI (for RTX 4090 optimal performance)
-- [x] Frame pacing telemetry **(current focus)**
-  - [x] Add lightweight profiler to record frame encode + submit time histograms during tests (`ProfilerSummary.submit_hist`, encode/transfer histograms ✅ Nov 2025)
-  - [x] Surface stats via CLI or debug HUD to validate 144/240/360 Hz budgets (`ProfilerHud.writeLine` encode/submit metrics ✅ Nov 2025)
-  - [x] Expose `TextRenderer` frame stats callback with glyph batching/upload flush counters
-
-**Deliverables:** `frame_pacing.zig`, `profiling.zig`, `threading.zig`, SIMD optimizations
-**Target Line Count:** ~800 lines (added SIMD + validation)
-**Test Coverage:** Benchmark suite + frame time histograms + SIMD unit tests
+### Deliverables
+- Telemetry API, HUD module, documentation + sample outputs.
 
 ---
 
-## Reference Material Insights (Cross-Phase)
+## Phase 14 · Platform Certification & QA Matrix (🌍 Planned)
 
-**Source:** `REFERENCE_MATERIAL.md` - Comprehensive analysis of archived repositories
+### Objectives
+- Certify Zeus on additional GPU/OS stacks beyond NVIDIA + Wayland.
+- Document quirks and fallback strategies per platform.
 
-### Key Takeaways for Zeus Development
+### Tasks
+- [ ] Validate RADV (RX 7900 XTX) + Linux/Wayland (apply §4 guidance from Reference Material).
+- [ ] Exercise NVIDIA + X11 fallback path (mailbox/immediate modes).
+- [ ] Smoke test Windows + DXGI surface creation (optional stretch).
+- [ ] Expand `docs/WAYLAND_COMPOSITOR_COMPATIBILITY.md` → `docs/PLATFORM_MATRIX.md`.
+- [ ] Capture GPU/driver metadata in validation logs.
 
-#### 1. NVIDIA Open GPU Kernel Modules (v580) - §1
-- ✅ **UVM Memory Strategy** - Zeus already uses optimal DEVICE_LOCAL + HOST_VISIBLE (ReBAR)
-- ✅ **Phase 6**: ReBAR detection for large host-visible allocations
-- ✅ **Phase 6**: DRM modesetting validation for 144-360Hz displays
-- 🚀 **Post-MVP**: Multi-GPU peer memory for dual-monitor setups
-
-#### 2. Vulkan-zig Binding Patterns - §2
-- ✅ **Dispatch Tables** - Zeus already uses three-tier loading pattern
-- ✅ **Phase 6**: Verified SPIR-V 4-byte alignment (`@embedFile` shader bytecode)
-- ✅ **Error Handling** - Zeus uses minimal error set (focused API surface)
-
-#### 3. Linux Kernel Optimizations - §3
-- ✅ **BORE Scheduler** - Already leveraged via linux-tkg-bore 6.17.4 kernel
-  - Perfect for text rendering (bursty I/O workload: input → render → VSync)
-  - Prioritizes tasks with low CPU burst scores (interactive tasks)
-- 🔜 **Phase 6**: AVX2 SIMD glyph batching (x86-64-v4 on Ryzen 9 7950X3D)
-  - **8x throughput**: 8 glyphs/iteration vs 1 glyph/iteration
-  - **~435μs savings/frame** @ 240Hz (10.4% of 4.16ms budget)
-- ✅ **Kernel Parameters** - `vm.max_map_count=16777216` for descriptor sets
-
-#### 4. AMD GPU Support Strategy - §4
-- 🔜 **Phase 7**: RADV-specific memory paths (separate staging vs NVIDIA ReBAR)
-- 🚀 **Post-MVP**: Test on AMD RX 7900 XTX for validation
-
-#### 5. Future Research Areas - §5
-- 🚀 **Vulkan 1.4**: maintenance7 (descriptor overhead reduction)
-- 🚀 **GPU Rasterization**: Compute shader glyph rendering (Slug/Pathfinder)
-- 🚀 **HDR Support**: VK_EXT_swapchain_colorspace, 10-bit color
-
-**Cross-References:**
-- Each TODO item above links to specific sections in `REFERENCE_MATERIAL.md`
-- Use `§N` notation to jump to relevant analysis (e.g., `§3.2` = SIMD optimizations)
+### Deliverables
+- Platform certification matrix, archived perf traces, updated validation toolkit.
 
 ---
 
-## Phase 7: Production Polish & Validation = PLANNED
+## Phase 15 · Release Engineering & Distribution (📦 Planned)
 
-### Robustness & Error Handling
-- [x] Comprehensive validation layer integration
-- [x] Debug naming for all Vulkan objects (VK_EXT_debug_utils)
-- [x] Graceful degradation (missing extensions/features)
-- [x] Out-of-memory handling strategies
-- [x] Swapchain recreation on window resize
-- [x] Device lost recovery (NVIDIA driver crashes)
-- [x] Wayland compositor compatibility testing
+### Objectives
+- Automate build/test/release for tags (v0.8.0-alpha → v1.0.0).
+- Produce reproducible package artifacts for Zig package manager + Grim.
 
-### Memory Management
-- [x] Memory pool statistics and reporting
-- [x] GPU memory budget tracking (VK_EXT_memory_budget)
-- [x] Leak detection in debug builds
-- [x] Defragmentation hints
-- [x] Staging buffer recycling
-- [x] Atlas eviction policies (LRU)
-- [x] AMD GPU memory optimization (see `REFERENCE_MATERIAL.md` §4)
-  - RADV-specific staging buffer paths (AMD prefers separate staging vs NVIDIA ReBAR)
-  - Memory type selection fallback for non-ReBAR systems
-  - Test on AMD RX 7900 XTX for validation
+### Tasks
+- [ ] Script release pipeline (`tools/release.zig` or shell) including fingerprinting.
+- [ ] Define changelog template and release notes workflow.
+- [ ] Add artifact signing / checksum generation.
+- [ ] Wire optional CI hooks (GitHub Actions or local runner) for build/test.
+- [ ] Document release process in `docs/releasing.md`.
 
-### Quality of Life
-- [x] Hot shader reload (development mode)
-- [x] Pipeline statistics queries
-- [x] GPU timestamp profiling
-- [x] Render graph visualization
-- [x] Performance overlay (FPS, frame time, GPU memory)
-- [x] Debug UI for atlas inspection
-
-### Documentation
-- [x] API reference docs (Zig docgen)
-- [x] Architecture decision records (ADRs)
-- [x] Performance tuning guide
-- [x] Integration guide for Grim
-- [x] Wayland compositor compatibility matrix
-- [x] NVIDIA driver version testing
-
-**Deliverables:** `docs/`, validation suite, profiling tools
-**Target Line Count:** ~800 lines + documentation
-**Test Coverage:** Stress tests, memory leak tests, multi-monitor tests
+### Deliverables
+- Automated release scripts, documented checklist, signed artifacts rationale.
 
 ---
 
-## Phase 8: Library Release & Grim Readiness <� GOAL
+## Phase 16 · Developer Experience & Documentation (📚 Planned)
 
-**Note:** Grim-side integration work is documented in `/data/projects/grim/zeus_integration.md`
+### Objectives
+- Provide first-class docs, tutorials, and DX tooling for contributors.
+- Reduce onboarding friction for new integrators.
 
-### Library Module Export
-- [x] Finalize `build.zig` for library module export ✅ Phase 8
-  - [x] Export `zeus` module with proper root source file
-  - [x] Embed SPIR-V shaders as anonymous imports
-  - [x] Document module dependencies (pure Zig, no libc)
-- [x] Create `build.zig.zon` package metadata ✅ Phase 8
-  - [x] Semantic versioning (v0.8.0-alpha)
-  - [x] Minimum Zig version requirement (0.16.0-dev)
-  - [x] Package paths and fingerprint
-- [ ] Tag stable release
-  - [x] v0.8.0-alpha (Phase 8 complete - Compositor compatibility) ✅ Nov 2025
-  - [ ] v0.9.0-beta (Integration testing complete)
-  - [ ] v1.0.0 (Production ready for Grim)
+### Tasks
+- [ ] Flesh out module-level documentation comments (`///`) across public APIs.
+- [ ] Generate HTML docs via `zig build docs` (ensure site-ready styling).
+- [ ] Produce quickstart guide + FAQ in `docs/` (link back to Reference Material sections).
+- [ ] Introduce linting/format hooks (`zig fmt`, spell check, lint scripts).
+- [ ] Curate example gallery (Wayland demo, headless benchmark, debug HUD showcase).
 
-### API Stability & Documentation
-- [ ] API reference documentation (`docs/API.md`)
-  - All public types, functions, error codes
-  - Example usage patterns for common scenarios
-  - Migration guide from stub implementations
-- [ ] Performance guarantees documentation
-  - Frame time targets (144-360Hz)
-  - Memory usage benchmarks
-  - Glyph throughput specifications
-- [x] Breaking changes policy (`docs/BREAKING_CHANGES.md` SemVer commitments ✅ Nov 2025)
-  - Semantic versioning commitment
-  - Backward compatibility rules
-
-### Integration Testing for Grim Use Case
-- [ ] Grim rendering pattern test (10K+ glyphs/frame)
-- [ ] Atlas upload pattern test (FreeType simulation)
-- [ ] Resize handling test (swapchain recreation)
-- [ ] Multi-frame stress test (1000+ frames)
-- [ ] Memory leak validation (valgrind, Zig leak detector)
-- [ ] Performance regression tests
-  - Frame time histograms
-  - GPU memory usage tracking
-
-### Platform Validation
-- [x] Linux + Wayland + NVIDIA (primary target) ✅ Phase 8
-  - [x] Hyprland compositor validation
-  - [x] KDE Plasma Wayland Session validation
-  - [x] Compositor detection and quirks system (`compositor_validation.zig` ✅ Nov 2025)
-  - [x] 144/240/270/360Hz display modes
-  - [x] RTX 3000/4000 series compatibility
-  - [x] Wayland compositor compatibility matrix (`docs/WAYLAND_COMPOSITOR_COMPATIBILITY.md` ✅ Nov 2025)
-- [ ] Linux + X11 + NVIDIA (fallback)
-- [ ] AMD GPU validation (RADV driver)
-  - RX 6000/7000 series testing
-  - RADV-specific memory paths
-
-### Release Preparation
-- [ ] CI/CD via local scripts for automated testing leveraging my system rtx 4090 + nvidia Open 580 driver
-- [ ] Release notes template
-- [ ] Version tagging workflow
-- [ ] Package hash generation for Zig package manager
-
-**Deliverables:** Zeus v1.0.0 library ready for Grim consumption
-**Test Coverage:** Integration tests simulating Grim's rendering patterns
-**Documentation:** `GRIM.md` (Zeus responsibilities), API reference, migration guide
+### Deliverables
+- Comprehensive docs site, sample apps, contributor guide.
 
 ---
 
-## Post-MVP: Advanced Features =� FUTURE
+## Phase 17 · Advanced Text Features (🖋️ Future)
 
-### Text Rendering Enhancements
-- [ ] Signed distance field (SDF) fonts
-- [ ] MSDF (multi-channel SDF) support
-- [ ] Color emoji support (CBDT/COLR tables)
-- [ ] Font hinting and grid fitting
-- [ ] Ligature support
-- [ ] Variable font support
-- [ ] GPU-accelerated glyph rasterization (see `REFERENCE_MATERIAL.md` §5.2)
-  - Compute shader rasterization (Slug/Pathfinder approach)
-  - Dynamic font size support without CPU rasterization
+### Objectives
+- Push rendering quality via SDF/MSDF pipelines and color font support.
+- Maintain performance targets while expanding typography options.
 
-### Effects & Styling
-- [ ] Underline/strikethrough rendering
-- [ ] Background color spans
-- [ ] Wavy underlines (spell check)
-- [ ] Text shadows
-- [ ] Glow effects for selection
+### Tasks
+- [ ] Prototype MSDF glyph baking pipeline (reference §5 Research in Reference Material).
+- [ ] Explore compute-based distance field generation for animated glyphs.
+- [ ] Add color font (CBDT/COLR) handling to atlas + shaders.
+- [ ] Benchmark visual quality vs performance trade-offs.
+- [ ] Document integration guidance + fallback strategies.
 
-### Multi-Monitor & HDR
-- [ ] Per-monitor DPI scaling
-- [ ] HDR color space support (see `REFERENCE_MATERIAL.md` §5.3)
-  - VK_EXT_swapchain_colorspace for HDR10
-  - VK_FORMAT_A2B10G10R10_UNORM_PACK32 swapchain format
-  - Wide gamut color rendering (Display P3 / Rec.2020)
-- [ ] Multi-GPU support (see `REFERENCE_MATERIAL.md` §1.3)
-  - VK_KHR_device_group for dual-GPU rendering
-  - NVIDIA peer memory for zero-copy multi-monitor
-
-### Platform Expansion
-- [ ] Windows Direct3D 12 backend (alternative to Vulkan)
-- [ ] macOS Metal backend (MoltenVK alternative)
-- [ ] Linux vulkan and vkd3d-proton support
-- [ ] Android support (Low priority)
-### Future Vulkan Features
-- [ ] Vulkan 1.4 adoption (see `REFERENCE_MATERIAL.md` §5.1)
-  - VK_KHR_maintenance7 (reduced CPU overhead for descriptors)
-  - VK_KHR_dynamic_rendering_local_read (tile-based GPU optimization)
+### Deliverables
+- Experimental renderer branches, comparative benchmarks, design notes.
 
 ---
 
-## Performance Targets Summary
+## Phase 18 · Rendering R&D & Ecosystem (🔮 Future)
 
-| Resolution | Refresh Rate | Frame Budget | Status | Notes |
-|------------|--------------|--------------|--------|-------|
-| 1080p      | 144 Hz       | 6.9ms        |  Ready | Minimum viable |
-| 1440p      | 144 Hz       | 6.9ms        |  Ready | Primary target |
-| 1440p      | 240 Hz       | 4.16ms       | =� Phase 6 | Requires optimization |
-| 1440p      | 270 Hz       | 3.7ms        | = Phase 6 | Stretch goal |
-| 1080p      | 360 Hz       | 2.77ms       | = Phase 7 | Competitive gaming |
-| 4K (2160p) | 144 Hz       | 6.9ms        | = Phase 7 | Future hardware |
-| 4K (2160p) | 240 Hz       | 4.16ms       | =� Future | Bleeding edge |
+### Objectives
+- Investigate forward-looking capabilities to keep Zeus competitive.
+- Foster ecosystem integrations and tooling.
 
-**Hardware Baseline:**
-- **Minimum:** NVIDIA RTX 3060 Ti + Ryzen 5 5600X
-- **Recommended:** NVIDIA RTX 4070 + Ryzen 9 7950X3D
-- **Optimal:** NVIDIA RTX 4090 + Ryzen 9 7950X3D (current test system)
+### Tasks
+- [ ] Evaluate compute-driven glyph rasterization (Pathfinder-style) for future pipeline.
+- [ ] Research HDR + wide color (VK_EXT_swapchain_colorspace) feasibility.
+- [ ] Prototype multi-GPU / device-group support for dual-display setups.
+- [ ] Collaborate with Grim team on plugin hooks + telemetry ingestion.
+- [ ] Maintain archive of findings in `docs/research/` with decision logs.
 
----
-
-## Testing Matrix
-
-### Supported Platforms
-- [x] Arch Linux + Wayland (Hyprland/Sway) - **Primary**
-- [ ] Arch Linux + X11 - **Secondary**
-- [ ] Ubuntu 24.04 + Wayland
-- [ ] Fedora 40 + Wayland
-- [ ] Windows 11 (Vulkan via native driver)
-- [ ] macOS (Vulkan via MoltenVK) - **Low priority**
-
-### GPU Compatibility
-- [x] NVIDIA RTX 4090 - **Primary test hardware**
-- [ ] NVIDIA RTX 4070 Ti
-- [ ] NVIDIA RTX 3080
-- [ ] AMD RX 7900 XTX - **Important for open-source drivers**
-- [ ] AMD RX 6800 XT
-- [ ] Intel Arc A770 - **Future consideration**
-
-### Wayland Compositors
-- [x] Hyprland ✅ Phase 8 (fully tested, production ready)
-- [x] KDE Plasma Wayland ✅ Phase 8 (fully tested, production ready) **Primary (dev workstation setup)**
-- [x] Compositor auto-detection ✅ Phase 8 (runtime detection via env vars + process inspection)
-- [ ] Sway (compatible, community tested)
-- [ ] GNOME Shell Wayland (compatible with quirks)
-- [ ] River (compatible)
-- [ ] Wayfire (compatible)
+### Deliverables
+- R&D reports, prototype branches, partnership notes.
 
 ---
 
-## Development Metrics
-
-**Current Status:**
-- **Total Lines:** 6,818 lines (22 modules)
-- **Test Coverage:** 100% of implemented phases
-- **Compilation:** Zig 0.16.0-dev (master branch)
-- **Build Time:** < 5 seconds (incremental)
-- **Test Time:** < 2 seconds
-
-**Phase 6 Targets:**
-- **Add:** ~600 lines (frame pacing, profiling, threading)
-- **Test Coverage:** Benchmark suite with frame time histograms
-- **Performance:** 240Hz @ 1440p stable
-
-**Phase 7 Targets:**
-- **Add:** ~800 lines + extensive documentation
-- **Test Coverage:** Stress tests, leak detection, multi-monitor
-- **Validation:** 100% Vulkan validation layers clean
-
-**Phase 8 Targets:**
-- **Integrate:** Replace 837 stub lines in Grim
-- **Performance:** Input latency < 1 frame, 144Hz minimum
-- **Quality:** Production-ready text rendering
-
----
-
-## References
-
-### Specifications & Official Documentation
-- **Vulkan Spec:** https://www.khronos.org/registry/vulkan/specs/1.3/html/
-- **Zig Language:** https://ziglang.org/documentation/master/
-
-### Archived Reference Repositories
-- **NVIDIA Open GPU Kernel Modules (v580):** `archive/open-gpu-kernel-modules/`
-  - UVM memory allocation, DRM modesetting, peer memory access
-- **vulkan-zig (Zig 0.13-0.15):** `archive/vulkan-zig/`
-  - Dispatch tables, error handling, SPIR-V alignment
-- **Linux TKG (Custom Kernel):** `archive/linux-tkg/`
-  - BORE/EEVDF/BMQ schedulers, memory tweaks, I/O optimizations
-- **BORE Scheduler:** `archive/bore-scheduler/`
-  - Burst-oriented task prioritization for interactive workloads
-- **CachyOS Kernel:** `archive/linux-cachyos/`
-  - x86-64-v3/v4 optimizations (AVX2/AVX-512), NVIDIA compatibility
-
-### Related Projects
-- **Grim Editor:** `/data/projects/grim/` (integration target)
-- **Ghostshell Terminal:** `/data/projects/ghostshell/` (sibling project using Zeus)
-- **wzl (Wayland):** `/data/projects/wzl/` (Wayland compositor framework)
-- **Phantom (TUI):** `/data/projects/phantom/` (TUI framework)
-
-### Documentation
-- **Reference Material Analysis:** `REFERENCE_MATERIAL.md` (insights from archived repos)
-- **Architecture Decisions:** `docs/ARCHITECTURE.md`
-- **Performance Guide:** `docs/PERFORMANCE.md`
-- **Integration Guide:** `docs/INTEGRATION.md`
-- **Grim Integration Requirements:** `GRIM.md` (Zeus's responsibilities for Grim)
-- **Grim Knowledge Base:** `GRIM_KB.md` (original integration notes)
-
----
-
-**Last Updated:** 2025-11-02 (Phase 8: Wayland compositor compatibility complete - KDE Plasma + Hyprland validated)
-**Next Milestone:** Phase 8 - Integration Testing (Grim rendering patterns, performance regression tests)
-**Owner:** CK Technology LLC
-**License:** MIT
+## Progress Tracking
+- Phase 9 is the current focus; revisit roadmap monthly post-integration runs.
+- Keep `PHASE8_SUMMARY.md` as historical log; update summaries when phases close.
+- Use this document as the single source of truth for planning conversations.
