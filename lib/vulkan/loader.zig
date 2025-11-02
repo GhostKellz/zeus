@@ -123,11 +123,11 @@ pub const InstanceDispatch = struct {
     enumerate_device_layer_properties: types.PFN_vkEnumerateDeviceLayerProperties,
     create_device: types.PFN_vkCreateDevice,
     get_device_proc_addr: types.PFN_vkGetDeviceProcAddr,
-    destroy_surface: types.PFN_vkDestroySurfaceKHR,
-    get_physical_device_surface_support: types.PFN_vkGetPhysicalDeviceSurfaceSupportKHR,
-    get_physical_device_surface_capabilities: types.PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR,
-    get_physical_device_surface_formats: types.PFN_vkGetPhysicalDeviceSurfaceFormatsKHR,
-    get_physical_device_surface_present_modes: types.PFN_vkGetPhysicalDeviceSurfacePresentModesKHR,
+    destroy_surface: ?types.PFN_vkDestroySurfaceKHR,
+    get_physical_device_surface_support: ?types.PFN_vkGetPhysicalDeviceSurfaceSupportKHR,
+    get_physical_device_surface_capabilities: ?types.PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR,
+    get_physical_device_surface_formats: ?types.PFN_vkGetPhysicalDeviceSurfaceFormatsKHR,
+    get_physical_device_surface_present_modes: ?types.PFN_vkGetPhysicalDeviceSurfacePresentModesKHR,
 
     fn load(instance: types.VkInstance, proc: types.PFN_vkGetInstanceProcAddr) !InstanceDispatch {
         return InstanceDispatch{
@@ -143,11 +143,11 @@ pub const InstanceDispatch = struct {
             .enumerate_device_layer_properties = try loadInstanceProc(types.PFN_vkEnumerateDeviceLayerProperties, proc, instance, "vkEnumerateDeviceLayerProperties"),
             .create_device = try loadInstanceProc(types.PFN_vkCreateDevice, proc, instance, "vkCreateDevice"),
             .get_device_proc_addr = try loadInstanceProc(types.PFN_vkGetDeviceProcAddr, proc, instance, "vkGetDeviceProcAddr"),
-            .destroy_surface = try loadInstanceProc(types.PFN_vkDestroySurfaceKHR, proc, instance, "vkDestroySurfaceKHR"),
-            .get_physical_device_surface_support = try loadInstanceProc(types.PFN_vkGetPhysicalDeviceSurfaceSupportKHR, proc, instance, "vkGetPhysicalDeviceSurfaceSupportKHR"),
-            .get_physical_device_surface_capabilities = try loadInstanceProc(types.PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR, proc, instance, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR"),
-            .get_physical_device_surface_formats = try loadInstanceProc(types.PFN_vkGetPhysicalDeviceSurfaceFormatsKHR, proc, instance, "vkGetPhysicalDeviceSurfaceFormatsKHR"),
-            .get_physical_device_surface_present_modes = try loadInstanceProc(types.PFN_vkGetPhysicalDeviceSurfacePresentModesKHR, proc, instance, "vkGetPhysicalDeviceSurfacePresentModesKHR"),
+            .destroy_surface = loadOptionalInstanceProc(?types.PFN_vkDestroySurfaceKHR, proc, instance, "vkDestroySurfaceKHR"),
+            .get_physical_device_surface_support = loadOptionalInstanceProc(?types.PFN_vkGetPhysicalDeviceSurfaceSupportKHR, proc, instance, "vkGetPhysicalDeviceSurfaceSupportKHR"),
+            .get_physical_device_surface_capabilities = loadOptionalInstanceProc(?types.PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR, proc, instance, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR"),
+            .get_physical_device_surface_formats = loadOptionalInstanceProc(?types.PFN_vkGetPhysicalDeviceSurfaceFormatsKHR, proc, instance, "vkGetPhysicalDeviceSurfaceFormatsKHR"),
+            .get_physical_device_surface_present_modes = loadOptionalInstanceProc(?types.PFN_vkGetPhysicalDeviceSurfacePresentModesKHR, proc, instance, "vkGetPhysicalDeviceSurfacePresentModesKHR"),
         };
     }
 };
@@ -362,6 +362,12 @@ fn loadDeviceProc(comptime T: type, proc: types.PFN_vkGetDeviceProcAddr, device:
     const raw = proc(device, name);
     if (raw) |fn_ptr| return castProc(T, fn_ptr);
     return vk_errors.Error.MissingSymbol;
+}
+
+fn loadOptionalInstanceProc(comptime T: type, proc: types.PFN_vkGetInstanceProcAddr, instance: ?types.VkInstance, name: [:0]const u8) T {
+    const raw = proc(instance, name);
+    if (raw) |fn_ptr| return castProc(T, fn_ptr);
+    return null;
 }
 
 fn loadOptionalDeviceProc(comptime T: type, proc: types.PFN_vkGetDeviceProcAddr, device: types.VkDevice, name: [:0]const u8) T {

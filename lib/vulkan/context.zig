@@ -204,24 +204,30 @@ pub const Context = struct {
             }
 
             // Step 6: Create logical device
-            const queue_priority: f32 = 1.0;
+            const queue_priority = [_]f32{1.0};
             var queue_create_infos = try std.ArrayList(types.VkDeviceQueueCreateInfo).initCapacity(self.allocator, 3);
             defer queue_create_infos.deinit(self.allocator);
 
             // Graphics queue
             try queue_create_infos.append(self.allocator, types.VkDeviceQueueCreateInfo{
+                .sType = .DEVICE_QUEUE_CREATE_INFO,
                 .queueFamilyIndex = ctx.graphics_family,
                 .queueCount = 1,
-                .pQueuePriorities = @ptrCast(&queue_priority),
+                .pQueuePriorities = &queue_priority,
+                .pNext = null,
+                .flags = 0,
             });
 
             // Compute queue (if different from graphics)
             if (ctx.compute_family) |cf| {
                 if (cf != ctx.graphics_family) {
                     try queue_create_infos.append(self.allocator, types.VkDeviceQueueCreateInfo{
+                        .sType = .DEVICE_QUEUE_CREATE_INFO,
                         .queueFamilyIndex = cf,
                         .queueCount = 1,
-                        .pQueuePriorities = @ptrCast(&queue_priority),
+                        .pQueuePriorities = &queue_priority,
+                        .pNext = null,
+                        .flags = 0,
                     });
                 }
             }
@@ -230,22 +236,32 @@ pub const Context = struct {
             if (ctx.transfer_family) |tf| {
                 if (tf != ctx.graphics_family and (ctx.compute_family == null or tf != ctx.compute_family.?)) {
                     try queue_create_infos.append(self.allocator, types.VkDeviceQueueCreateInfo{
+                        .sType = .DEVICE_QUEUE_CREATE_INFO,
                         .queueFamilyIndex = tf,
                         .queueCount = 1,
-                        .pQueuePriorities = @ptrCast(&queue_priority),
+                        .pQueuePriorities = &queue_priority,
+                        .pNext = null,
+                        .flags = 0,
                     });
                 }
             }
 
+            var device_features = std.mem.zeroes(types.VkPhysicalDeviceFeatures);
+
             const device_create_info = types.VkDeviceCreateInfo{
+                .sType = .DEVICE_CREATE_INFO,
+                .pNext = null,
+                .flags = 0,
                 .queueCreateInfoCount = @intCast(queue_create_infos.items.len),
                 .pQueueCreateInfos = queue_create_infos.items.ptr,
+                .enabledLayerCount = 0,
+                .ppEnabledLayerNames = null,
                 .enabledExtensionCount = @intCast(self.required_device_extensions.len),
                 .ppEnabledExtensionNames = if (self.required_device_extensions.len > 0)
                     self.required_device_extensions.ptr
                 else
                     null,
-                .pEnabledFeatures = null,
+                .pEnabledFeatures = &device_features,
             };
 
             const dev_result = ctx.instance_dispatch.create_device(ctx.physical_device, &device_create_info, null, &ctx.device);
