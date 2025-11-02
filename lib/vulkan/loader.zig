@@ -64,7 +64,7 @@ pub const Loader = struct {
         self.get_device_proc = try lookupProc(types.PFN_vkGetDeviceProcAddr, &lib, "vkGetDeviceProcAddr");
     }
 
-    fn lookupProc(comptime T: type, lib: *const std.DynLib, name: [:0]const u8) !T {
+    fn lookupProc(comptime T: type, lib: *std.DynLib, name: [:0]const u8) !T {
         const symbol = lib.lookup(T, name) catch return vk_errors.Error.MissingSymbol;
         if (symbol) |ptr| return ptr;
         return vk_errors.Error.MissingSymbol;
