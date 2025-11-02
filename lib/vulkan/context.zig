@@ -204,24 +204,28 @@ pub const Context = struct {
             }
 
             // Step 6: Create logical device
-            // Allocate queue priorities array - must remain valid for entire device creation
-            // This is critical for MangoHud and other validation layer compatibility
-            const queue_priorities = try self.allocator.alloc(f32, 3);
-            defer self.allocator.free(queue_priorities);
-            @memset(queue_priorities, 1.0);
+            // Allocate queue priorities buffer - must remain valid until vkCreateDevice returns.
+            // Each queue family needs its own stable slice. Critical for MangoHud compatibility.
+            const max_queue_families = 3; // graphics, compute, transfer
+            const queue_priorities_buffer = try self.allocator.alloc(f32, max_queue_families);
+            defer self.allocator.free(queue_priorities_buffer);
+            @memset(queue_priorities_buffer, 1.0); // All priorities set to 1.0
 
-            var queue_create_infos = try std.ArrayList(types.VkDeviceQueueCreateInfo).initCapacity(self.allocator, 3);
+            var queue_create_infos = std.ArrayList(types.VkDeviceQueueCreateInfo){ .items = &[_]types.VkDeviceQueueCreateInfo{}, .capacity = 0 };
             defer queue_create_infos.deinit(self.allocator);
+
+            var priority_offset: usize = 0;
 
             // Graphics queue
             try queue_create_infos.append(self.allocator, types.VkDeviceQueueCreateInfo{
                 .sType = .DEVICE_QUEUE_CREATE_INFO,
                 .queueFamilyIndex = ctx.graphics_family,
                 .queueCount = 1,
-                .pQueuePriorities = queue_priorities.ptr,
+                .pQueuePriorities = queue_priorities_buffer[priority_offset..].ptr,
                 .pNext = null,
                 .flags = 0,
             });
+            priority_offset += 1;
 
             // Compute queue (if different from graphics)
             if (ctx.compute_family) |cf| {
@@ -230,10 +234,11 @@ pub const Context = struct {
                         .sType = .DEVICE_QUEUE_CREATE_INFO,
                         .queueFamilyIndex = cf,
                         .queueCount = 1,
-                        .pQueuePriorities = queue_priorities.ptr,
+                        .pQueuePriorities = queue_priorities_buffer[priority_offset..].ptr,
                         .pNext = null,
                         .flags = 0,
                     });
+                    priority_offset += 1;
                 }
             }
 
@@ -244,10 +249,11 @@ pub const Context = struct {
                         .sType = .DEVICE_QUEUE_CREATE_INFO,
                         .queueFamilyIndex = tf,
                         .queueCount = 1,
-                        .pQueuePriorities = queue_priorities.ptr,
+                        .pQueuePriorities = queue_priorities_buffer[priority_offset..].ptr,
                         .pNext = null,
                         .flags = 0,
                     });
+                    priority_offset += 1;
                 }
             }
 
