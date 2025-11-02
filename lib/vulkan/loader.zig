@@ -65,7 +65,7 @@ pub const Loader = struct {
     }
 
     fn lookupProc(comptime T: type, lib: *std.DynLib, name: [:0]const u8) !T {
-        const symbol = lib.lookup(T, name) catch return vk_errors.Error.MissingSymbol;
+        const symbol = lib.lookup(T, name);
         if (symbol) |ptr| return ptr;
         return vk_errors.Error.MissingSymbol;
     }
