@@ -204,7 +204,12 @@ pub const Context = struct {
             }
 
             // Step 6: Create logical device
-            const queue_priority = [_]f32{1.0};
+            // Allocate queue priorities array - must remain valid for entire device creation
+            // This is critical for MangoHud and other validation layer compatibility
+            const queue_priorities = try self.allocator.alloc(f32, 3);
+            defer self.allocator.free(queue_priorities);
+            @memset(queue_priorities, 1.0);
+
             var queue_create_infos = try std.ArrayList(types.VkDeviceQueueCreateInfo).initCapacity(self.allocator, 3);
             defer queue_create_infos.deinit(self.allocator);
 
@@ -213,7 +218,7 @@ pub const Context = struct {
                 .sType = .DEVICE_QUEUE_CREATE_INFO,
                 .queueFamilyIndex = ctx.graphics_family,
                 .queueCount = 1,
-                .pQueuePriorities = &queue_priority,
+                .pQueuePriorities = queue_priorities.ptr,
                 .pNext = null,
                 .flags = 0,
             });
@@ -225,7 +230,7 @@ pub const Context = struct {
                         .sType = .DEVICE_QUEUE_CREATE_INFO,
                         .queueFamilyIndex = cf,
                         .queueCount = 1,
-                        .pQueuePriorities = &queue_priority,
+                        .pQueuePriorities = queue_priorities.ptr,
                         .pNext = null,
                         .flags = 0,
                     });
@@ -239,7 +244,7 @@ pub const Context = struct {
                         .sType = .DEVICE_QUEUE_CREATE_INFO,
                         .queueFamilyIndex = tf,
                         .queueCount = 1,
-                        .pQueuePriorities = &queue_priority,
+                        .pQueuePriorities = queue_priorities.ptr,
                         .pNext = null,
                         .flags = 0,
                     });
