@@ -35,9 +35,9 @@ pub const Instance = struct {
         var app_info_ptr: ?*const types.VkApplicationInfo = null;
         if (options.application) |app| {
             app_info_storage = types.VkApplicationInfo{
-                .pApplicationName = app.application_name,
+                .pApplicationName = if (app.application_name) |n| n.ptr else null,
                 .applicationVersion = app.application_version,
-                .pEngineName = app.engine_name,
+                .pEngineName = if (app.engine_name) |n| n.ptr else null,
                 .engineVersion = app.engine_version,
                 .apiVersion = app.api_version,
             };

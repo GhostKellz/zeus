@@ -174,6 +174,18 @@ pub fn build(b: *std.Build) void {
     });
     test_step.dependOn(&b.addRunArtifact(query_test).step);
 
+    const feature_auditor_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/feature_auditor_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "vulkan", .module = vulkan_mod },
+            },
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(feature_auditor_test).step);
+
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
     // The Zig build system is entirely implemented in userland, which means

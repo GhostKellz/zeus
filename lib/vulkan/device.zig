@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const loader = @import("loader.zig");
 const vk_errors = @import("error.zig");
+const queue_guard = @import("queue_guard.zig");
 
 pub const Device = struct {
     allocator: std.mem.Allocator,
@@ -33,6 +34,10 @@ pub const Device = struct {
         const arena_alloc = arena.allocator();
 
         const queue_infos = try buildQueueCreateInfos(arena_alloc, options.queues);
+
+        // Validate queue create infos in Debug mode
+        queue_guard.assertQueuePrioritiesValid(queue_infos);
+
         const extension_ptrs = try copyCStringPointers(arena_alloc, options.enabled_extensions);
 
         var features_storage: types.VkPhysicalDeviceFeatures = undefined;

@@ -57,6 +57,33 @@ pub const nvidia_optimizations = @import("nvidia_optimizations.zig");
 pub const debug_utils = @import("debug_utils.zig");
 pub const error_context = @import("error_context.zig");
 
+// v0.1.5 Phase 1: Production hardening
+pub const feature_auditor = @import("feature_auditor.zig");
+pub const safe_defaults = @import("safe_defaults.zig");
+pub const queue_guard = @import("queue_guard.zig");
+pub const loader_invariants = @import("loader_invariants.zig");
+pub const abi_checks = @import("abi_checks.zig");
+pub const mangohud_detect = @import("mangohud_detect.zig");
+pub const pipeline_cache_persist = @import("pipeline_cache_persist.zig");
+pub const memory_tracker = @import("memory_tracker.zig");
+pub const validation_layers = @import("validation_layers.zig");
+pub const error_recovery = @import("error_recovery.zig");
+pub const thread_safety = @import("thread_safety.zig");
+
+// v0.1.5 Phase 2: Performance & Advanced Features
+pub const simd_ops = @import("simd_ops.zig");
+pub const descriptor_cache = @import("descriptor_cache.zig");
+pub const command_recycler = @import("command_recycler.zig");
+pub const sparse_memory = @import("sparse_memory.zig");
+pub const memory_budget = @import("memory_budget.zig");
+pub const multi_gpu = @import("multi_gpu.zig");
+pub const raytracing_helpers = @import("raytracing_helpers.zig");
+pub const mesh_shading = @import("mesh_shading.zig");
+pub const subgroup_ops = @import("subgroup_ops.zig");
+pub const shader_reload = @import("shader_reload.zig");
+pub const gpu_profiler = @import("gpu_profiler.zig");
+pub const crash_handler = @import("crash_handler.zig");
+
 pub const Loader = loader.Loader;
 pub const Context = context.Context;
 pub const Instance = instance.Instance;
@@ -102,3 +129,7 @@ pub const CompositorType = compositor_validation.CompositorType;
 pub const CompositorQuirks = compositor_validation.CompositorQuirks;
 pub const FramePacer = frame_pacing.FramePacer;
 pub const WaylandFeedback = frame_pacing.WaylandFeedback;
+pub const FeatureAuditor = feature_auditor.FeatureAuditor;
+pub const FeatureSupport = feature_auditor.FeatureSupport;
+pub const ExtensionSupport = feature_auditor.ExtensionSupport;
+pub const SafeConfig = safe_defaults.SafeConfig;
