@@ -1,4 +1,5 @@
 pub const types = @import("types.zig");
+pub const types_ext = @import("types_ext.zig");
 pub const loader = @import("loader.zig");
 pub const errors = @import("error.zig");
 pub const instance = @import("instance.zig");

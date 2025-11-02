@@ -44,6 +44,7 @@ pub fn build(b: *std.Build) void {
     const vulkan_mod = b.addModule("vulkan", .{
         .root_source_file = b.path("lib/vulkan/mod.zig"),
         .target = target,
+        .link_libc = true, // Required: Forces DlDynLib instead of buggy ElfDynLib for std.DynLib
     });
 
     mod.addImport("vulkan", vulkan_mod);
