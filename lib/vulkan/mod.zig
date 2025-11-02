@@ -26,6 +26,37 @@ pub const system_validation = @import("system_validation.zig");
 pub const compositor_validation = @import("compositor_validation.zig");
 pub const frame_pacing = @import("frame_pacing.zig");
 
+// v0.1.4: Advanced memory management
+pub const allocator = @import("allocator.zig");
+pub const buffer_allocator = @import("buffer_allocator.zig");
+pub const image_allocator = @import("image_allocator.zig");
+pub const memory = @import("memory.zig");
+
+// v0.1.4: Advanced command & sync
+pub const command_manager = @import("command_manager.zig");
+pub const sync_manager = @import("sync_manager.zig");
+pub const barrier_helper = @import("barrier_helper.zig");
+
+// v0.1.4: Advanced descriptors
+pub const descriptor_allocator = @import("descriptor_allocator.zig");
+
+// v0.1.4: Advanced helpers and builders
+pub const transfer_helper = @import("transfer_helper.zig");
+pub const immediate_submit = @import("immediate_submit.zig");
+pub const pipeline_builder = @import("pipeline_builder.zig");
+pub const render_pass_builder = @import("render_pass_builder.zig");
+pub const framebuffer_manager = @import("framebuffer_manager.zig");
+
+// v0.1.4: Performance and hardware support
+pub const hdr_support = @import("hdr_support.zig");
+pub const vrr_support = @import("vrr_support.zig");
+pub const dmabuf_support = @import("dmabuf_support.zig");
+pub const nvidia_optimizations = @import("nvidia_optimizations.zig");
+
+// v0.1.4: Developer experience
+pub const debug_utils = @import("debug_utils.zig");
+pub const error_context = @import("error_context.zig");
+
 pub const Loader = loader.Loader;
 pub const Context = context.Context;
 pub const Instance = instance.Instance;
