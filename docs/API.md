@@ -1,10 +1,11 @@
 # Zeus API Reference
 
-**Version:** 0.1.0
-**Zig Version:** 0.16.0-dev+
-**Last Updated:** 2025-11-02
+**Version:** 0.1.5 (Phase 8 Complete)
+**Zig Version:** 0.16.0-dev.164+ (Fully compatible with 0.16.0-dev.1225+)
+**Last Updated:** 2025-01-10
+**Target:** High-performance Vulkan 1.3/1.4 text rendering for terminal emulators
 
-This document provides a comprehensive API reference for the Zeus Vulkan library for high-performance text rendering.
+This document provides a comprehensive API reference for the Zeus Vulkan library focusing on the high-level Context API and text rendering pipeline.
 
 ---
 
@@ -12,18 +13,21 @@ This document provides a comprehensive API reference for the Zeus Vulkan library
 
 1. [Quick Start](#quick-start)
 2. [Core Types](#core-types)
-3. [Instance & Device Management](#instance--device-management)
-4. [Surface & Swapchain](#surface--swapchain)
-5. [Text Rendering](#text-rendering)
-6. [Resource Management](#resource-management)
-7. [Synchronization](#synchronization)
-8. [System Validation](#system-validation)
-9. [Frame Pacing](#frame-pacing)
-10. [Error Handling](#error-handling)
+3. [Context API (High-Level, Recommended)](#context-api-high-level-recommended)
+4. [Instance & Device Management (Low-Level)](#instance--device-management-low-level)
+5. [Surface & Swapchain](#surface--swapchain)
+6. [Text Rendering](#text-rendering)
+7. [Resource Management](#resource-management)
+8. [Synchronization](#synchronization)
+9. [System Validation](#system-validation)
+10. [Frame Pacing](#frame-pacing)
+11. [Error Handling](#error-handling)
 
 ---
 
 ## Quick Start
+
+### Simple Context Creation
 
 ```zig
 const std = @import("std");
@@ -34,50 +38,108 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // 1. Initialize Vulkan loader
-    var vk_loader = try zeus.Loader.init(allocator);
-    defer vk_loader.deinit();
+    // Create Vulkan context with defaults
+    var ctx = try zeus.Context.init(allocator);
+    defer ctx.deinit();
 
-    // 2. Create Vulkan instance
-    var instance = try zeus.Instance.create(&vk_loader, allocator, .{
-        .application = .{
-            .application_name = "My App",
-            .application_version = zeus.types.makeApiVersion(1, 0, 0),
-            .engine_name = "Zeus",
-            .engine_version = zeus.types.makeApiVersion(0, 1, 0),
-            .api_version = zeus.types.makeApiVersion(1, 3, 0),
-        },
-        .enabled_extensions = &.{
+    std.log.info("Vulkan initialized successfully!", .{});
+}
+```
+
+### Context with Builder Pattern (Recommended)
+
+```zig
+const std = @import("std");
+const zeus = @import("zeus");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // Build context with custom configuration
+    var ctx = try zeus.Context.builder(allocator)
+        .setAppName("My Terminal")
+        .setAppVersion(1, 0, 0)
+        .setApiVersion(1, 3, 0)
+        .enableValidation()  // Debug builds only
+        .addInstanceExtensions(&.{
             "VK_KHR_surface",
             "VK_KHR_wayland_surface",
-        },
+        })
+        .addDeviceExtensions(&.{
+            "VK_KHR_swapchain",
+        })
+        .build();
+    defer ctx.deinit();
+
+    std.log.info("Graphics queue family: {d}", .{ctx.graphics_family});
+}
+```
+
+### Complete Rendering Example
+
+```zig
+const std = @import("std");
+const zeus = @import("zeus");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // 1. Initialize Vulkan context
+    var ctx = try zeus.Context.builder(allocator)
+        .setAppName("Ghostshell")
+        .setAppVersion(1, 0, 0)
+        .addInstanceExtensions(&.{"VK_KHR_surface", "VK_KHR_wayland_surface"})
+        .addDeviceExtensions(&.{"VK_KHR_swapchain"})
+        .build();
+    defer ctx.deinit();
+
+    // 2. Create swapchain (platform-specific - see Surface section)
+    // ...
+
+    // 3. Create text renderer
+    var renderer = try zeus.TextRenderer.init(allocator, &ctx, .{
+        .render_pass = render_pass,
+        .max_quads_per_frame = 10_000,
+        .atlas_width = 2048,
+        .atlas_height = 2048,
     });
-    defer instance.destroy();
+    defer renderer.deinit();
 
-    // 3. Select physical device
-    const candidate = try instance.selectFirstGraphicsDevice(allocator);
-
-    // 4. Create logical device
-    var device = try instance.createDevice(allocator, .{
-        .physical_device = candidate.physical_device,
-        .queue_family_indices = &.{candidate.graphics_queue_family},
-        .enabled_extensions = &.{"VK_KHR_swapchain"},
-    });
-    defer device.destroy();
-
-    // 5. Create text renderer
-    var text_renderer = try zeus.TextRenderer.init(
-        allocator,
-        &device,
-        // ... renderer configuration
-    );
-    defer text_renderer.deinit();
-
-    // 6. Render loop
+    // 4. Render loop with frame pacing
+    var pacer = zeus.FramePacer.init(144); // 144 FPS
     while (running) {
-        try text_renderer.beginFrame();
-        // Queue text quads...
-        try text_renderer.endFrame();
+        const delta_ns = pacer.beginFrame();
+
+        // Acquire swapchain image
+        const image_index = try swapchain.acquireNextImage(...);
+
+        // Begin rendering
+        try renderer.beginFrame(viewport, command_buffer);
+
+        // Queue glyphs
+        for (terminal_buffer) |cell| {
+            try renderer.queueQuad(.{
+                .x = cell.x,
+                .y = cell.y,
+                .width = glyph_width,
+                .height = glyph_height,
+                .atlas_u = cell.glyph.u,
+                .atlas_v = cell.glyph.v,
+                .atlas_w = cell.glyph.w,
+                .atlas_h = cell.glyph.h,
+                .color = cell.fg_color,
+            });
+        }
+
+        // Finish frame
+        const stats = try renderer.endFrame();
+        try swapchain.present(image_index);
+
+        pacer.endFrame();
     }
 }
 ```
@@ -108,7 +170,286 @@ pub fn main() !void {
 
 ---
 
-## Instance & Device Management
+## Context API (High-Level, Recommended)
+
+The `Context` provides a unified, high-level API for Vulkan initialization with automatic resource management. This is the **recommended** entry point for Zeus.
+
+### Context
+
+Manages the entire Vulkan lifecycle: loader, instance, physical device, logical device, and queues.
+
+#### `Context.init`
+```zig
+pub fn init(allocator: std.mem.Allocator) !Context
+```
+
+**Description:** Create a Context with default settings (Vulkan 1.3, discrete GPU preference, graphics queue only)
+
+**Parameters:**
+- `allocator`: Memory allocator
+
+**Returns:** `Context` with all resources initialized
+
+**Example:**
+```zig
+var ctx = try zeus.Context.init(allocator);
+defer ctx.deinit();
+```
+
+#### `Context.builder`
+```zig
+pub fn builder(allocator: std.mem.Allocator) Context.Builder
+```
+
+**Description:** Create a Builder for custom Context configuration
+
+**Returns:** `Context.Builder` instance
+
+**Example:**
+```zig
+var ctx = try zeus.Context.builder(allocator)
+    .setAppName("My App")
+    .enableValidation()
+    .build();
+defer ctx.deinit();
+```
+
+#### `Context.deinit`
+```zig
+pub fn deinit(self: *Context) void
+```
+
+**Description:** Cleanup all Vulkan resources (call with `defer`)
+
+#### `Context.waitIdle`
+```zig
+pub fn waitIdle(self: *Context) !void
+```
+
+**Description:** Wait for all device queues to complete operations
+
+#### `Context.waitGraphicsIdle`
+```zig
+pub fn waitGraphicsIdle(self: *Context) !void
+```
+
+**Description:** Wait for graphics queue only
+
+---
+
+### Context.Builder
+
+Fluent API for configuring Context creation.
+
+#### `Builder.init`
+```zig
+pub fn init(allocator: std.mem.Allocator) Builder
+```
+
+**Description:** Initialize a new builder with default settings
+
+#### `Builder.setAppName`
+```zig
+pub fn setAppName(self: Builder, name: [:0]const u8) Builder
+```
+
+**Parameters:**
+- `name`: Application name (null-terminated)
+
+**Returns:** Updated builder (chainable)
+
+**Example:**
+```zig
+.setAppName("Ghostshell")
+```
+
+#### `Builder.setAppVersion`
+```zig
+pub fn setAppVersion(self: Builder, major: u32, minor: u32, patch: u32) Builder
+```
+
+**Parameters:**
+- `major`, `minor`, `patch`: Semantic version components
+
+**Returns:** Updated builder (chainable)
+
+**Example:**
+```zig
+.setAppVersion(1, 2, 0)
+```
+
+#### `Builder.setApiVersion`
+```zig
+pub fn setApiVersion(self: Builder, major: u32, minor: u32, patch: u32) Builder
+```
+
+**Parameters:**
+- `major`, `minor`, `patch`: Vulkan API version (e.g., 1, 3, 0 for Vulkan 1.3)
+
+**Returns:** Updated builder (chainable)
+
+**Default:** Vulkan 1.3.0
+
+**Example:**
+```zig
+.setApiVersion(1, 4, 0)  // Request Vulkan 1.4
+```
+
+#### `Builder.enableValidation`
+```zig
+pub fn enableValidation(self: Builder) Builder
+```
+
+**Description:** Enable Vulkan validation layers (requires `VK_LAYER_KHRONOS_validation`)
+
+**Returns:** Updated builder (chainable)
+
+**Note:** Only enable in debug builds - significant performance overhead
+
+**Example:**
+```zig
+.enableValidation()
+```
+
+#### `Builder.requireComputeQueue`
+```zig
+pub fn requireComputeQueue(self: Builder) Builder
+```
+
+**Description:** Require a compute queue (fails if unavailable)
+
+**Returns:** Updated builder (chainable)
+
+#### `Builder.requireTransferQueue`
+```zig
+pub fn requireTransferQueue(self: Builder) Builder
+```
+
+**Description:** Require a dedicated transfer queue (fails if unavailable)
+
+**Returns:** Updated builder (chainable)
+
+#### `Builder.addInstanceExtensions`
+```zig
+pub fn addInstanceExtensions(self: Builder, extensions: []const [*:0]const u8) Builder
+```
+
+**Parameters:**
+- `extensions`: Slice of null-terminated extension names
+
+**Returns:** Updated builder (chainable)
+
+**Common Extensions:**
+- `VK_KHR_surface` - Required for presentation
+- `VK_KHR_wayland_surface` - Wayland support
+- `VK_KHR_xcb_surface` - X11 support
+- `VK_EXT_debug_utils` - Debug utilities (with validation)
+
+**Example:**
+```zig
+.addInstanceExtensions(&.{
+    "VK_KHR_surface",
+    "VK_KHR_wayland_surface",
+})
+```
+
+#### `Builder.addDeviceExtensions`
+```zig
+pub fn addDeviceExtensions(self: Builder, extensions: []const [*:0]const u8) Builder
+```
+
+**Parameters:**
+- `extensions`: Slice of null-terminated device extension names
+
+**Returns:** Updated builder (chainable)
+
+**Common Extensions:**
+- `VK_KHR_swapchain` - Required for presentation
+
+**Example:**
+```zig
+.addDeviceExtensions(&.{
+    "VK_KHR_swapchain",
+})
+```
+
+#### `Builder.build`
+```zig
+pub fn build(self: Builder) !Context
+```
+
+**Description:** Build the Context with all configured options
+
+**Returns:** Initialized `Context`
+
+**Errors:**
+- `error.InstanceCreationFailed` - Instance creation failed
+- `error.NoVulkanDevices` - No Vulkan-capable GPUs found
+- `error.NoGraphicsQueue` - No graphics queue family found
+- `error.DeviceCreationFailed` - Logical device creation failed
+
+**Example:**
+```zig
+var ctx = try builder.build();
+defer ctx.deinit();
+```
+
+---
+
+### Context Fields
+
+Once built, the Context exposes these public fields:
+
+```zig
+pub const Context = struct {
+    allocator: std.mem.Allocator,
+    loader: Loader,
+    instance: VkInstance,
+    instance_dispatch: InstanceDispatch,
+    physical_device: VkPhysicalDevice,
+    device: VkDevice,
+    device_dispatch: DeviceDispatch,
+
+    // Queue handles
+    graphics_queue: VkQueue,
+    compute_queue: ?VkQueue,      // Only if requireComputeQueue()
+    transfer_queue: ?VkQueue,     // Only if requireTransferQueue()
+
+    // Queue family indices
+    graphics_family: u32,
+    compute_family: ?u32,
+    transfer_family: ?u32,
+};
+```
+
+**Usage Example:**
+```zig
+var ctx = try zeus.Context.builder(allocator)
+    .requireComputeQueue()
+    .build();
+defer ctx.deinit();
+
+std.log.info("Graphics family: {d}", .{ctx.graphics_family});
+std.log.info("Compute family: {?d}", .{ctx.compute_family});
+
+// Use device dispatch for Vulkan calls
+const cmd_pool_info = zeus.types.VkCommandPoolCreateInfo{
+    .sType = .COMMAND_POOL_CREATE_INFO,
+    .queueFamilyIndex = ctx.graphics_family,
+    .flags = zeus.types.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+};
+var cmd_pool: zeus.types.VkCommandPool = undefined;
+const result = ctx.device_dispatch.create_command_pool(
+    ctx.device,
+    &cmd_pool_info,
+    null,
+    &cmd_pool
+);
+```
+
+---
+
+## Instance & Device Management (Low-Level)
 
 ### Loader
 
@@ -757,6 +1098,6 @@ Zeus achieves ~512 glyphs per draw call with automatic batching, reducing draw c
 
 ---
 
-**Last Updated:** 2025-11-02
-**Version:** 0.1.0
+**Last Updated:** 2025-01-10
+**Version:** 0.1.5 (Phase 8 Complete)
 **License:** MIT

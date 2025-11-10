@@ -2,7 +2,7 @@
 
 **Next-Generation Vulkan Text Rendering Library**
 
-High-performance Vulkan 1.3 library written in pure Zig, purpose-built for GPU-accelerated text rendering in the [Grim](https://github.com/ghostkellz/grim) editor. Optimized for NVIDIA GPUs on Arch Linux + Wayland with native support for 144-360Hz refresh rates.
+High-performance Vulkan library written in pure Zig, purpose-built for GPU-accelerated text rendering in the [Grim](https://github.com/ghostkellz/grim) editor. Optimized for NVIDIA GPUs on Arch Linux + Wayland with native support for 144-360Hz refresh rates.
 
 <div align="center">
 

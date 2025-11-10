@@ -186,6 +186,45 @@ pub fn build(b: *std.Build) void {
     });
     test_step.dependOn(&b.addRunArtifact(feature_auditor_test).step);
 
+    // Phase 9: Integration test suite
+    const integration_test_step = b.step("integration-test", "Run integration tests (Grim workload simulation)");
+
+    const grim_pattern_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/integration/grim_rendering_pattern_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "vulkan", .module = vulkan_mod },
+            },
+        }),
+    });
+    integration_test_step.dependOn(&b.addRunArtifact(grim_pattern_test).step);
+
+    const swapchain_recreation_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/integration/swapchain_recreation_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "vulkan", .module = vulkan_mod },
+            },
+        }),
+    });
+    integration_test_step.dependOn(&b.addRunArtifact(swapchain_recreation_test).step);
+
+    const memory_leak_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/integration/memory_leak_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "vulkan", .module = vulkan_mod },
+            },
+        }),
+    });
+    integration_test_step.dependOn(&b.addRunArtifact(memory_leak_test).step);
+
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
     // The Zig build system is entirely implemented in userland, which means
