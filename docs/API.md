@@ -1,6 +1,6 @@
 # Zeus API Reference
 
-**Version:** 0.1.5 (Phase 8 Complete)
+**Version:** 0.1.8
 **Zig Version:** 0.16.0-dev.164+ (Fully compatible with 0.16.0-dev.1225+)
 **Last Updated:** 2025-01-10
 **Target:** High-performance Vulkan 1.3/1.4 text rendering for terminal emulators
@@ -1099,5 +1099,5 @@ Zeus achieves ~512 glyphs per draw call with automatic batching, reducing draw c
 ---
 
 **Last Updated:** 2025-01-10
-**Version:** 0.1.5 (Phase 8 Complete)
+**Version:** 0.1.8
 **License:** MIT

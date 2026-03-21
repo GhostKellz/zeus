@@ -175,16 +175,64 @@ pub const MemoryBlock = struct {
 
     /// Free a sub-allocation and coalesce with neighbors
     pub fn free(self: *MemoryBlock, offset: types.VkDeviceSize) void {
-        for (self.allocations.items) |*chunk| {
+        var freed_idx: ?usize = null;
+
+        for (self.allocations.items, 0..) |*chunk, i| {
             if (chunk.offset == offset and !chunk.is_free) {
                 chunk.is_free = true;
                 self.allocated_bytes -= chunk.size;
                 self.allocation_count -= 1;
-
-                // TODO: Coalesce with adjacent free chunks
-                return;
+                freed_idx = i;
+                break;
             }
         }
+
+        if (freed_idx) |idx| {
+            self.coalesceAt(idx);
+        }
+    }
+
+    /// Coalesce free chunks around the given index
+    fn coalesceAt(self: *MemoryBlock, idx: usize) void {
+        if (self.allocations.items.len == 0) return;
+
+        const chunk = &self.allocations.items[idx];
+        if (!chunk.is_free) return;
+
+        // Try to merge with next chunk
+        if (idx + 1 < self.allocations.items.len) {
+            const next = &self.allocations.items[idx + 1];
+            if (next.is_free and chunk.offset + chunk.size == next.offset) {
+                chunk.size += next.size;
+                _ = self.allocations.orderedRemove(idx + 1);
+            }
+        }
+
+        // Try to merge with previous chunk
+        if (idx > 0) {
+            const prev = &self.allocations.items[idx - 1];
+            if (prev.is_free and prev.offset + prev.size == chunk.offset) {
+                prev.size += chunk.size;
+                _ = self.allocations.orderedRemove(idx);
+            }
+        }
+    }
+
+    /// Get fragmentation ratio (0.0 = no fragmentation, 1.0 = fully fragmented)
+    pub fn getFragmentation(self: *MemoryBlock) f32 {
+        if (self.allocations.items.len <= 1) return 0.0;
+
+        var free_chunks: u32 = 0;
+        for (self.allocations.items) |chunk| {
+            if (chunk.is_free) free_chunks += 1;
+        }
+
+        if (free_chunks <= 1) return 0.0;
+
+        // Fragmentation = (free_chunks - 1) / total_chunks
+        const total: f32 = @floatFromInt(self.allocations.items.len);
+        const frag: f32 = @floatFromInt(free_chunks - 1);
+        return frag / total;
     }
 };
 

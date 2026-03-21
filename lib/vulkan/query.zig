@@ -3,6 +3,8 @@ const std = @import("std");
 const types = @import("types.zig");
 const loader = @import("loader.zig");
 
+const log = std.log.scoped(.query);
+
 /// Query pool for timestamp queries (GPU timing)
 pub const TimestampQueryPool = struct {
     device: types.VkDevice,
@@ -226,14 +228,18 @@ pub const Profiler = struct {
         return section.last_duration_ns / 1_000_000.0; // ns to ms
     }
 
-    /// Print all section timings
+    /// Log all section timings using structured logging
     pub fn printResults(self: *Profiler) void {
-        std.debug.print("\n=== GPU Profiler Results ===\n", .{});
+        log.info("=== GPU Profiler Results ===", .{});
         var it = self.sections.iterator();
         while (it.next()) |entry| {
             const ms = entry.value_ptr.last_duration_ns / 1_000_000.0;
-            std.debug.print("  {s}: {d:.3} ms\n", .{ entry.key_ptr.*, ms });
+            log.info("  {s}: {d:.3} ms", .{ entry.key_ptr.*, ms });
         }
-        std.debug.print("\n", .{});
+    }
+
+    /// Get results as an iterator for programmatic access
+    pub fn iterateResults(self: *Profiler) std.StringHashMap(Section).Iterator {
+        return self.sections.iterator();
     }
 };

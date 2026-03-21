@@ -2,7 +2,7 @@ const std = @import("std");
 const vk = @import("vulkan");
 
 test "feature auditor - enumerate and validate extensions" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -56,7 +56,7 @@ test "feature auditor - enumerate and validate extensions" {
 }
 
 test "feature auditor - debug assertions" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -85,9 +85,9 @@ test "feature auditor - debug assertions" {
     const auditor = try vk.FeatureAuditor.init(allocator, @constCast(&instance), physical_device);
     defer auditor.deinit();
 
-    // Test debug assertions with safe values
+    // Test feature validation with safe values
     const zero_features = std.mem.zeroes(vk.types.VkPhysicalDeviceFeatures);
-    vk.feature_auditor.assertFeaturesSupported(auditor, zero_features);
+    try vk.feature_auditor.assertFeaturesSupported(auditor, zero_features);
 
     std.debug.print("✓ Feature auditor assertions test passed\n", .{});
 }

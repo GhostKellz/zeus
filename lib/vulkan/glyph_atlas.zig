@@ -240,15 +240,15 @@ pub const GlyphAtlas = struct {
     }
 
     fn reserveRect(self: *GlyphAtlas, size: types.VkExtent2D) errors.Error!GlyphRect {
-        const padding_twice = std.math.mul(u32, self.options.padding, 2) catch return errors.Error.FeatureNotPresent;
-        const padded_width = std.math.add(u32, size.width, padding_twice) catch return errors.Error.FeatureNotPresent;
-        const padded_height = std.math.add(u32, size.height, padding_twice) catch return errors.Error.FeatureNotPresent;
+        const padding_twice = std.math.mul(u32, self.options.padding, 2) catch return errors.Error.DimensionOverflow;
+        const padded_width = std.math.add(u32, size.width, padding_twice) catch return errors.Error.DimensionOverflow;
+        const padded_height = std.math.add(u32, size.height, padding_twice) catch return errors.Error.DimensionOverflow;
         std.debug.assert(padded_width > 0 and padded_height > 0);
 
         if (padded_width > self.atlas.extent.width or padded_height > self.atlas.extent.height) {
             try self.requestGrowth(padded_width, padded_height);
             if (padded_width > self.atlas.extent.width or padded_height > self.atlas.extent.height) {
-                return errors.Error.FeatureNotPresent;
+                return errors.Error.GlyphTooLarge;
             }
             return self.reserveRect(size);
         }
@@ -279,15 +279,15 @@ pub const GlyphAtlas = struct {
                 },
                 .size = size,
             };
-            shelf.cursor_x = std.math.add(u32, shelf.cursor_x, padded_width) catch return errors.Error.FeatureNotPresent;
+            shelf.cursor_x = std.math.add(u32, shelf.cursor_x, padded_width) catch return errors.Error.DimensionOverflow;
             return rect;
         }
 
-        const needed_height = std.math.add(u32, self.next_y, padded_height) catch return errors.Error.FeatureNotPresent;
+        const needed_height = std.math.add(u32, self.next_y, padded_height) catch return errors.Error.DimensionOverflow;
         if (needed_height > self.atlas.extent.height) {
             try self.requestGrowth(padded_width, padded_height);
             if (padded_height > self.atlas.extent.height) {
-                return errors.Error.FeatureNotPresent;
+                return errors.Error.AtlasFull;
             }
             return self.reserveRect(size);
         } else {
@@ -308,7 +308,7 @@ pub const GlyphAtlas = struct {
             try cb(self.options.growth_context, self, new_extent);
             return;
         }
-        return errors.Error.FeatureNotPresent;
+        return errors.Error.GrowthNotSupported;
     }
 
     pub fn resize(self: *GlyphAtlas, new_image: image.ManagedImage) void {
@@ -317,7 +317,8 @@ pub const GlyphAtlas = struct {
         self.shelves.clearRetainingCapacity();
         self.glyphs.clearRetainingCapacity();
         self.next_y = 0;
-        _ = self.shelves.append(.{ .y = 0, .height = 0, .cursor_x = 0 }) catch unreachable;
+        // Append to cleared list - capacity retained so this cannot fail
+        self.shelves.appendAssumeCapacity(.{ .y = 0, .height = 0, .cursor_x = 0 });
     }
 
     pub fn flushUploads(self: *GlyphAtlas, cmd: types.VkCommandBuffer) errors.Error!usize {

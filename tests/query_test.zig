@@ -17,7 +17,7 @@ test "TimestampQueryPool creation" {
 }
 
 test "Profiler section management" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     _ = gpa.allocator(); // Not used in this API surface test
 

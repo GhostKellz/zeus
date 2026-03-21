@@ -1,6 +1,6 @@
 # Zeus
 
-**Next-Generation Vulkan Text Rendering Library**
+**Vulkan Text Rendering Library**
 
 High-performance Vulkan library written in pure Zig, purpose-built for GPU-accelerated text rendering in the [Grim](https://github.com/ghostkellz/grim) editor. Optimized for NVIDIA GPUs on Arch Linux + Wayland with native support for 144-360Hz refresh rates.
 
@@ -16,7 +16,7 @@ High-performance Vulkan library written in pure Zig, purpose-built for GPU-accel
 
 ---
 
-## 🎯 Project Status
+## Project Status
 
 **Phase 8 COMPLETE** ✅ → **Phase 2 (November 2024) COMPLETE** ✅
 
@@ -31,11 +31,11 @@ High-performance Vulkan library written in pure Zig, purpose-built for GPU-accel
 - **94 device functions** + **17 instance functions** = **~95% Vulkan 1.3/1.4 coverage**
 - **5 extension types** (debug_utils, dynamic_rendering, descriptor_indexing, ray tracing)
 - **Zig 0.16.0-dev** compilation (< 5s builds)
-- **Production-ready** for ghostVK and modern Vulkan projects
+- Suitable for ghostVK and modern Vulkan projects
 
 ---
 
-## ✨ Highlights
+## Features
 
 ### Pure Zig Implementation
 - Zero external runtime dependencies (only `libvulkan.so` dynamic loading)
@@ -72,7 +72,7 @@ Designed for NVIDIA + Wayland at extreme refresh rates:
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - [Zig 0.16.0-dev](https://ziglang.org/download/) (master branch)
@@ -144,7 +144,7 @@ zeus/
 
 ---
 
-## 🎨 Text Rendering Pipeline
+## Text Rendering Pipeline
 
 ### Frame API Workflow
 ```zig
@@ -254,7 +254,7 @@ const uv = rect.toUV(atlas_width, atlas_height);
 
 ---
 
-## 📊 Performance Targets
+## Performance Targets
 
 | Resolution | Refresh Rate | Frame Budget | Status | Hardware |
 |------------|--------------|--------------|--------|----------|
@@ -276,56 +276,7 @@ const uv = rect.toUV(atlas_width, atlas_height);
 
 ---
 
-## 🎉 What's New in v0.1.4
-
-**Released: December 2024** - Advanced memory management, performance optimizations, and developer tools
-
-### Memory Management
-- **VMA-style allocator** with sub-allocation and automatic ReBAR detection for NVIDIA RTX 4090
-- **Buffer/image allocators** with automatic memory binding and layout tracking
-- **Built-in telemetry** for fragmentation and leak detection
-
-### Command & Synchronization
-- **Command manager** with per-thread pool recycling for parallel command buffer recording
-- **Sync manager** with fence/semaphore pooling and timeline semaphore support
-- **Barrier helper** for automatic pipeline stage and access mask inference
-
-### Builders & Helpers
-- **Descriptor allocator** with automatic pool growth when exhausted
-- **Transfer helper** for async buffer/image uploads on dedicated transfer queue
-- **Immediate submit helper** for convenient one-shot command submission
-- **Pipeline builders** with fluent API for graphics and compute pipelines
-- **Render pass builder** with automatic subpass dependency inference
-- **Framebuffer manager** with swapchain integration
-
-### Performance & Hardware
-- **HDR support** (`VK_EXT_hdr_metadata`) for OLED displays with BT.2020 primaries
-- **VRR/Adaptive sync** for 240-360Hz high refresh rate displays with frame pacing
-- **Wayland DMA-BUF** import/export for zero-copy composition with KDE Plasma/Mutter/wlroots
-- **NVIDIA optimizations** for RTX 4090: ReBAR hints, async compute queue utilization
-
-### Developer Experience
-- **Debug utilities** for object naming, markers, and labels (RenderDoc/validation layers)
-- **Enhanced error context** with call sites and recovery strategies
-- **Comprehensive error descriptions** and suggested solutions
-
-### Known Issues & Workarounds
-
-**MangoHud Compatibility:** Tests may crash when MangoHud overlay is active. This is a known issue with MangoHud hooking device creation. Workaround:
-```bash
-# Run tests without MangoHud
-DISABLE_MANGOHUD=1 zig build test
-
-# Or disable MangoHud globally
-unset MANGOHUD
-unset MANGOHUD_CONFIG
-```
-
-**Migration from v0.1.3:** Most applications will need minimal changes. The new allocators and builders are opt-in and existing code continues to work.
-
----
-
-## 🏗️ Roadmap
+## Roadmap
 
 See [`TODO.md`](TODO.md) for the complete 8-phase roadmap. Quick summary:
 
@@ -347,12 +298,12 @@ See [`TODO.md`](TODO.md) for the complete 8-phase roadmap. Quick summary:
 - **Phase 7:** Production polish (validation, hot reload, profiling)
 - **Phase 8:** Grim integration (replace stub renderer)
 
-### 🚀 Future
-- **Post-MVP:** SDF fonts, ligatures, HDR, multi-monitor,Android
+### Future
+- **Post-MVP:** SDF fonts, ligatures, HDR, multi-monitor, Android
 
 ---
 
-## 🔬 Development Workflow
+## Development
 
 ### Formatting
 ```bash
@@ -390,7 +341,7 @@ zig build -Doptimize=ReleaseSafe
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 - [`TODO.md`](TODO.md) - Complete 8-phase roadmap with checklists
 - [`GRIM_KB.md`](GRIM_KB.md) - Knowledge base for Grim integration
@@ -400,7 +351,7 @@ zig build -Doptimize=ReleaseSafe
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Bug reports, design feedback, and PRs are welcome! Please:
 
@@ -418,7 +369,7 @@ Bug reports, design feedback, and PRs are welcome! Please:
 
 ---
 
-## 🎯 Design Goals
+## Design Goals
 
 ### Performance
 - **144Hz minimum** on NVIDIA RTX 3000+ series @ 1440p
@@ -440,7 +391,7 @@ Bug reports, design feedback, and PRs are welcome! Please:
 
 ---
 
-## 🔗 Related Projects
+## Related Projects
 
 - **[Grim](https://github.com/ghostkellz/grim)** - Vim-like editor powered by Zeus
 - **[Ghostshell](https://github.com/ghostkellz/ghostshell)** - Terminal emulator (Ghostty fork, also uses Zeus)
@@ -449,7 +400,7 @@ Bug reports, design feedback, and PRs are welcome! Please:
 
 ---
 
-## 📄 License
+## License
 
 MIT © 2025 CK Technology LLC
 
@@ -457,12 +408,12 @@ See [`LICENSE`](LICENSE) for full details.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- **Vulkan Working Group** - For the Vulkan specification
+- **Vulkan Working Group** - Vulkan specification
 - **vulkan-zig** (archived) - Reference implementation for Zig bindings
-- **Zig Community** - For the amazing language and tooling
-- **NVIDIA** - For excellent Vulkan drivers on Linux
+- **Zig Community** - Language and tooling
+- **NVIDIA** - Linux Vulkan drivers
 
 ---
 

@@ -181,6 +181,11 @@ pub const ImmediateCommands = struct {
                 new: types.VkImageLayout,
                 aspect: types.VkImageAspectFlags,
             ) void {
+                const src_access = accessMaskForLayout(old);
+                const dst_access = accessMaskForLayout(new);
+                const src_stage = stageMaskForLayout(old);
+                const dst_stage = stageMaskForLayout(new);
+
                 const barrier = types.VkImageMemoryBarrier{
                     .old_layout = old,
                     .new_layout = new,
@@ -194,14 +199,14 @@ pub const ImmediateCommands = struct {
                         .base_array_layer = 0,
                         .layer_count = 1,
                     },
-                    .src_access_mask = 0, // TODO: derive from old_layout
-                    .dst_access_mask = 0, // TODO: derive from new_layout
+                    .src_access_mask = src_access,
+                    .dst_access_mask = dst_access,
                 };
 
                 dd.cmd_pipeline_barrier(
                     cmd,
-                    @intFromEnum(types.VkPipelineStageFlagBits.top_of_pipe),
-                    @intFromEnum(types.VkPipelineStageFlagBits.bottom_of_pipe),
+                    src_stage,
+                    dst_stage,
                     0,
                     0,
                     null,
@@ -218,3 +223,42 @@ pub const ImmediateCommands = struct {
         try cmd.submit();
     }
 };
+
+/// Derive access mask from image layout
+fn accessMaskForLayout(layout: types.VkImageLayout) types.VkAccessFlags {
+    return switch (layout) {
+        .undefined => 0,
+        .general => @intFromEnum(types.VkAccessFlagBits.shader_read) |
+            @intFromEnum(types.VkAccessFlagBits.shader_write),
+        .color_attachment_optimal => @intFromEnum(types.VkAccessFlagBits.color_attachment_read) |
+            @intFromEnum(types.VkAccessFlagBits.color_attachment_write),
+        .depth_stencil_attachment_optimal => @intFromEnum(types.VkAccessFlagBits.depth_stencil_attachment_read) |
+            @intFromEnum(types.VkAccessFlagBits.depth_stencil_attachment_write),
+        .depth_stencil_read_only_optimal => @intFromEnum(types.VkAccessFlagBits.depth_stencil_attachment_read),
+        .shader_read_only_optimal => @intFromEnum(types.VkAccessFlagBits.shader_read),
+        .transfer_src_optimal => @intFromEnum(types.VkAccessFlagBits.transfer_read),
+        .transfer_dst_optimal => @intFromEnum(types.VkAccessFlagBits.transfer_write),
+        .preinitialized => @intFromEnum(types.VkAccessFlagBits.host_write),
+        .present_src_khr => @intFromEnum(types.VkAccessFlagBits.memory_read),
+        else => 0,
+    };
+}
+
+/// Derive pipeline stage from image layout
+fn stageMaskForLayout(layout: types.VkImageLayout) types.VkPipelineStageFlags {
+    return switch (layout) {
+        .undefined => @intFromEnum(types.VkPipelineStageFlagBits.top_of_pipe),
+        .general => @intFromEnum(types.VkPipelineStageFlagBits.all_commands),
+        .color_attachment_optimal => @intFromEnum(types.VkPipelineStageFlagBits.color_attachment_output),
+        .depth_stencil_attachment_optimal => @intFromEnum(types.VkPipelineStageFlagBits.early_fragment_tests) |
+            @intFromEnum(types.VkPipelineStageFlagBits.late_fragment_tests),
+        .depth_stencil_read_only_optimal => @intFromEnum(types.VkPipelineStageFlagBits.early_fragment_tests) |
+            @intFromEnum(types.VkPipelineStageFlagBits.late_fragment_tests),
+        .shader_read_only_optimal => @intFromEnum(types.VkPipelineStageFlagBits.fragment_shader),
+        .transfer_src_optimal => @intFromEnum(types.VkPipelineStageFlagBits.transfer),
+        .transfer_dst_optimal => @intFromEnum(types.VkPipelineStageFlagBits.transfer),
+        .preinitialized => @intFromEnum(types.VkPipelineStageFlagBits.host),
+        .present_src_khr => @intFromEnum(types.VkPipelineStageFlagBits.bottom_of_pipe),
+        else => @intFromEnum(types.VkPipelineStageFlagBits.all_commands),
+    };
+}

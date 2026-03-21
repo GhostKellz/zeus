@@ -88,7 +88,7 @@ pub const ThreadSafeCommandPoolManager = struct {
     allocator: std.mem.Allocator,
 
     const PoolEntry = struct {
-        pool: ?*anyopaque, // VkCommandPool handle
+        pool: *anyopaque, // VkCommandPool handle
         thread_id: std.Thread.Id,
     };
 
@@ -104,53 +104,96 @@ pub const ThreadSafeCommandPoolManager = struct {
         self.pools.deinit();
     }
 
-    /// Get or create a command pool for the current thread
-    pub fn getPoolForCurrentThread(self: *ThreadSafeCommandPoolManager) !?*anyopaque {
+    /// Get command pool for the current thread, or null if none registered
+    pub fn getPoolForCurrentThread(self: *ThreadSafeCommandPoolManager) ?*anyopaque {
         const thread_id = std.Thread.getCurrentId();
 
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        // Check if pool exists for this thread
         for (self.pools.items) |entry| {
             if (std.meta.eql(entry.thread_id, thread_id)) {
                 return entry.pool;
             }
         }
 
-        // Create new pool for this thread
-        log.info("Creating new command pool for thread {}", .{thread_id});
-        // Pool creation would happen here
-        // try self.pools.append(.{ .pool = new_pool, .thread_id = thread_id });
+        return null;
+    }
 
-        return error.NotImplemented;
+    /// Register a command pool for the current thread
+    pub fn registerPoolForCurrentThread(self: *ThreadSafeCommandPoolManager, pool: *anyopaque) !void {
+        const thread_id = std.Thread.getCurrentId();
+
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        // Check if already registered
+        for (self.pools.items) |entry| {
+            if (std.meta.eql(entry.thread_id, thread_id)) {
+                log.warn("Command pool already registered for thread {}", .{thread_id});
+                return;
+            }
+        }
+
+        try self.pools.append(.{ .pool = pool, .thread_id = thread_id });
+        log.debug("Registered command pool for thread {}", .{thread_id});
+    }
+
+    /// Unregister the command pool for the current thread
+    pub fn unregisterCurrentThread(self: *ThreadSafeCommandPoolManager) void {
+        const thread_id = std.Thread.getCurrentId();
+
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.pools.items, 0..) |entry, i| {
+            if (std.meta.eql(entry.thread_id, thread_id)) {
+                _ = self.pools.swapRemove(i);
+                log.debug("Unregistered command pool for thread {}", .{thread_id});
+                return;
+            }
+        }
     }
 };
 
-/// Thread-safe descriptor pool allocator
+/// Thread-safe descriptor set tracker
+/// Wraps descriptor allocation with mutex protection for multi-threaded access
 pub const ThreadSafeDescriptorAllocator = struct {
     mutex: std.Thread.Mutex,
-    // Actual descriptor pool data would go here
+    allocated_count: u64,
+    freed_count: u64,
 
     pub fn init() ThreadSafeDescriptorAllocator {
         return .{
             .mutex = .{},
+            .allocated_count = 0,
+            .freed_count = 0,
         };
     }
 
-    pub fn allocate(self: *ThreadSafeDescriptorAllocator) !void {
+    /// Track a descriptor set allocation (call after vkAllocateDescriptorSets)
+    pub fn trackAllocation(self: *ThreadSafeDescriptorAllocator, count: u32) void {
         self.mutex.lock();
         defer self.mutex.unlock();
-
-        // Allocation logic here
-        return error.NotImplemented;
+        self.allocated_count += count;
     }
 
-    pub fn free(self: *ThreadSafeDescriptorAllocator) void {
+    /// Track a descriptor set free (call after vkFreeDescriptorSets)
+    pub fn trackFree(self: *ThreadSafeDescriptorAllocator, count: u32) void {
         self.mutex.lock();
         defer self.mutex.unlock();
+        self.freed_count += count;
+    }
 
-        // Free logic here
+    /// Get current allocation statistics
+    pub fn getStats(self: *ThreadSafeDescriptorAllocator) struct { allocated: u64, freed: u64, active: u64 } {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return .{
+            .allocated = self.allocated_count,
+            .freed = self.freed_count,
+            .active = self.allocated_count - self.freed_count,
+        };
     }
 };
 

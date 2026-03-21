@@ -35,7 +35,15 @@ pub const VkError = error{
     Unknown,
 };
 
-pub const Error = BaseError || VkError;
+/// Atlas and texture-related errors
+pub const AtlasError = error{
+    AtlasFull,
+    GlyphTooLarge,
+    GrowthNotSupported,
+    DimensionOverflow,
+};
+
+pub const Error = BaseError || VkError || AtlasError;
 
 pub fn ensureSuccess(result: types.VkResult) Error!void {
     switch (result) {

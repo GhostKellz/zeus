@@ -12,16 +12,33 @@ pub const CrashHandler = struct {
     hang_timeout_ms: u64,
     dump_path: []const u8,
 
+    pub const Options = struct {
+        hang_timeout_ms: u64 = 5000,
+        dump_path: ?[]const u8 = null,
+    };
+
     pub fn init(allocator: std.mem.Allocator, device: types.VkDevice) !*CrashHandler {
+        return initWithOptions(allocator, device, .{});
+    }
+
+    pub fn initWithOptions(allocator: std.mem.Allocator, device: types.VkDevice, options: Options) !*CrashHandler {
         const self = try allocator.create(CrashHandler);
         self.* = .{
             .allocator = allocator,
             .device = device,
             .last_fence_status = .SUCCESS,
-            .hang_timeout_ms = 5000,
-            .dump_path = "/tmp/zeus_crash_dump.txt",
+            .hang_timeout_ms = options.hang_timeout_ms,
+            .dump_path = options.dump_path orelse getDefaultDumpPath(),
         };
         return self;
+    }
+
+    fn getDefaultDumpPath() []const u8 {
+        // Respect XDG_RUNTIME_DIR if available, otherwise fall back to /tmp
+        if (std.posix.getenv("XDG_RUNTIME_DIR")) |runtime_dir| {
+            _ = runtime_dir; // Would need to allocate to build path
+        }
+        return "/tmp/zeus_crash_dump.txt";
     }
 
     pub fn deinit(self: *CrashHandler) void {

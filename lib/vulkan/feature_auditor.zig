@@ -307,28 +307,24 @@ pub const FeatureAuditor = struct {
     }
 };
 
-/// Debug-only assertion that features are supported
+/// Validate that features are supported, returning error on failure
 pub fn assertFeaturesSupported(
     auditor: *FeatureAuditor,
     requested: types.VkPhysicalDeviceFeatures,
-) void {
-    if (@import("builtin").mode == .Debug) {
-        auditor.validateFeatures(requested) catch |err| {
-            log.err("ASSERTION FAILED: Unsupported features requested: {}", .{err});
-            @panic("Feature validation failed - requested unsupported features");
-        };
-    }
+) !void {
+    auditor.validateFeatures(requested) catch |err| {
+        log.err("Feature validation failed: unsupported features requested: {}", .{err});
+        return error.UnsupportedFeatures;
+    };
 }
 
-/// Debug-only assertion that extensions are supported
+/// Validate that extensions are supported, returning error on failure
 pub fn assertExtensionsSupported(
     auditor: *FeatureAuditor,
     requested: []const [*:0]const u8,
-) void {
-    if (@import("builtin").mode == .Debug) {
-        auditor.validateExtensions(requested) catch |err| {
-            log.err("ASSERTION FAILED: Unsupported extensions requested: {}", .{err});
-            @panic("Extension validation failed - requested unsupported extensions");
-        };
-    }
+) !void {
+    auditor.validateExtensions(requested) catch |err| {
+        log.err("Extension validation failed: unsupported extensions requested: {}", .{err});
+        return error.UnsupportedExtensions;
+    };
 }

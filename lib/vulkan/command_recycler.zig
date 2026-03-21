@@ -4,12 +4,13 @@
 
 const std = @import("std");
 const types = @import("types.zig");
+const loader = @import("loader.zig");
 
 const log = std.log.scoped(.command_recycler);
 
 pub const CommandBufferPool = struct {
     allocator: std.mem.Allocator,
-    device_dispatch: *const anyopaque, // DeviceDispatch
+    device_dispatch: *const loader.DeviceDispatch,
     device: types.VkDevice,
     command_pool: types.VkCommandPool,
     available_buffers: std.ArrayList(types.VkCommandBuffer),
@@ -20,7 +21,7 @@ pub const CommandBufferPool = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        device_dispatch: *const anyopaque,
+        device_dispatch: *const loader.DeviceDispatch,
         device: types.VkDevice,
         command_pool: types.VkCommandPool,
     ) CommandBufferPool {
@@ -49,17 +50,37 @@ pub const CommandBufferPool = struct {
 
         // Try to reuse an available buffer
         if (self.available_buffers.items.len > 0) {
-            const buffer = self.available_buffers.pop();
-            try self.in_use_buffers.append(buffer);
+            const cmd_buffer = self.available_buffers.pop();
+            try self.in_use_buffers.append(cmd_buffer);
             self.total_reused += 1;
             log.debug("Reused command buffer (available: {})", .{self.available_buffers.items.len});
-            return buffer;
+            return cmd_buffer;
         }
 
         // Allocate new buffer
         log.debug("Allocating new command buffer", .{});
+
+        const alloc_info = types.VkCommandBufferAllocateInfo{
+            .command_pool = self.command_pool,
+            .level = .primary,
+            .command_buffer_count = 1,
+        };
+
+        var cmd_buffer: types.VkCommandBuffer = undefined;
+        const result = self.device_dispatch.allocate_command_buffers(
+            self.device,
+            &alloc_info,
+            &cmd_buffer,
+        );
+
+        if (result != .success) {
+            log.err("Failed to allocate command buffer: {}", .{result});
+            return error.CommandBufferAllocationFailed;
+        }
+
+        try self.in_use_buffers.append(cmd_buffer);
         self.total_allocated += 1;
-        return error.NotImplemented; // Would allocate here
+        return cmd_buffer;
     }
 
     /// Release a command buffer back to the pool
